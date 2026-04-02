@@ -1,0 +1,63 @@
+@model OracleSqlPortal.Models.SignupViewModel
+@{ ViewData["Title"] = "Create Account"; Layout = null; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oracle SQL Portal — Create Account</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body class="auth-page">
+<div class="auth-wrap" style="max-width:460px">
+    <div class="auth-brand">
+        <div><span class="brand-icon-lg"><i class="bi bi-person-plus-fill"></i></span></div>
+        <h1>Create Account</h1>
+        <p>Request access to Oracle SQL Portal</p>
+    </div>
+    <div class="auth-card">
+        @if (!string.IsNullOrEmpty(Model.Error))
+        {   <div class="auth-alert danger"><i class="bi bi-exclamation-triangle-fill"></i>@Model.Error</div> }
+        @if (!string.IsNullOrEmpty(Model.Success))
+        {   <div class="auth-alert success"><i class="bi bi-check-circle-fill"></i>@Model.Success</div> }
+        @if (string.IsNullOrEmpty(Model.Success))
+        {
+        <form method="post" asp-action="Signup">
+            @Html.AntiForgeryToken()
+            <div class="row g-3">
+                <div class="col-6">
+                    <label class="form-label">Username *</label>
+                    <input type="text" name="Username" value="@Model.Username" class="form-control" placeholder="john_dev" required autocomplete="off" />
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Display Name *</label>
+                    <input type="text" name="DisplayName" value="@Model.DisplayName" class="form-control" placeholder="John Developer" required />
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Email</label>
+                    <input type="email" name="Email" value="@Model.Email" class="form-control" placeholder="john@company.com" />
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Password *</label>
+                    <input type="password" name="Password" id="pwd" class="form-control" placeholder="••••••••" required />
+                </div>
+                <div class="col-6">
+                    <label class="form-label">Confirm Password *</label>
+                    <input type="password" name="Confirm" id="cpwd" class="form-control" placeholder="••••••••" required />
+                </div>
+            </div>
+            <div class="mt-2 mb-4 p-3 rounded" style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.2);font-size:0.78rem;color:#fb923c">
+                <i class="bi bi-info-circle me-1"></i>
+                Your account will be <strong>pending admin approval</strong>. You'll be notified once access is granted.
+            </div>
+            <button type="submit" class="btn-auth-submit"><i class="bi bi-person-check me-2"></i>Request Account</button>
+        </form>
+        }
+        <div class="auth-links">
+            <a asp-controller="Auth" asp-action="Login"><i class="bi bi-arrow-left me-1"></i>Back to Sign In</a>
+        </div>
+    </div>
+</div>
+</body></html>

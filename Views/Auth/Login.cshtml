@@ -1,0 +1,254 @@
+@model OracleSqlPortal.Models.LoginViewModel
+@{
+    ViewData["Title"] = "Login"; Layout = null;
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oracle SQL Portal — Sign In</title>
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="~/css/site.css" />
+
+    <style>
+        /* ===== Theme Variables ===== */
+        body.light-mode {
+            --bg-color: #f9fafb;
+            --text-color: #111827;
+            --card-bg: #ffffff;
+            --input-bg: #ffffff;
+            --input-border: #d1d5db;
+            --input-placeholder: #6b7280;
+            --focus-color: rgba(99,102,241,0.25);
+        }
+
+        body.dark-mode {
+            --bg-color: #111827;
+            --text-color: #f9fafb;
+            --card-bg: #1f2937;
+            --input-bg: #1f2937;
+            --input-border: #374151;
+            --input-placeholder: #9ca3af;
+            --focus-color: rgba(99,102,241,0.5);
+        }
+
+        body.auth-page {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+
+        .auth-wrap {
+            max-width: 400px;
+            margin: auto;
+            padding: 2rem;
+            position: relative;
+        }
+
+        .auth-card {
+            padding: 2rem;
+            border-radius: 0.5rem;
+            background-color: var(--card-bg);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+            /* ===== Form Controls ===== */
+            .auth-card .form-control {
+                background-color: var(--input-bg) !important;
+                color: var(--text-color) !important;
+                border: 1px solid var(--input-border) !important;
+                transition: all 0.3s ease;
+            }
+
+                .auth-card .form-control::placeholder {
+                    color: var(--input-placeholder) !important;
+                    opacity: 1;
+                }
+
+                .auth-card .form-control:focus {
+                    border-color: #6366f1 !important;
+                    box-shadow: 0 0 0 2px var(--focus-color) !important;
+                    outline: none;
+                }
+
+            .auth-card .input-group-text {
+                background-color: var(--input-bg) !important;
+                border-color: var(--input-border) !important;
+                color: inherit !important;
+                transition: all 0.3s ease;
+            }
+
+        /* Password Strength & Caps Lock */
+        .strength-bar {
+            height: 5px;
+            border-radius: 4px;
+            margin-top: 6px;
+            background: #e5e7eb;
+            overflow: hidden;
+        }
+
+        .strength-fill {
+            height: 100%;
+            width: 0%;
+            transition: all 0.3s ease;
+        }
+
+        .caps-warning {
+            font-size: 0.75rem;
+            color: #f59e0b;
+            display: none;
+        }
+
+        /* Dark/Light Mode Toggle */
+        #themeToggle {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: var(--text-color);
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+
+<body class="auth-page">
+    <!-- Dark/Light Mode Toggle -->
+    <i id="themeToggle" class="bi bi-sun-fill" title="Toggle Dark/Light Mode"></i>
+
+    <div class="auth-wrap">
+        <div class="auth-brand text-center mb-3">
+            <div><span class="brand-icon-lg"><i class="bi bi-database-fill"></i></span></div>
+            <h1>Oracle SQL Portal</h1>
+            <p>Sign in to your account</p>
+        </div>
+
+        <div class="auth-card">
+
+            @if (!string.IsNullOrEmpty(Model.Error))
+            {
+                <div class="auth-alert danger mb-3">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    @Model.Error
+                </div>
+            }
+
+            <form method="post" asp-action="Login">
+                @Html.AntiForgeryToken()
+
+                <!-- USERNAME -->
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" name="Username" class="form-control" placeholder="username" autocomplete="username" autofocus />
+                </div>
+
+                <!-- PASSWORD -->
+                <div class="mb-2">
+                    <label class="form-label">Password</label>
+                    <div class="input-group">
+                        <input type="password"
+                               name="Password"
+                               id="loginPwd"
+                               class="form-control"
+                               placeholder="••••••••"
+                               autocomplete="current-password"
+                               onkeyup="checkStrength(this.value)"
+                               onkeydown="checkCaps(event)" />
+
+                        <span class="input-group-text d-flex align-items-center justify-content-center"
+                              onclick="togglePwd()" style="cursor:pointer;width:45px;">
+                            <i class="bi bi-eye" id="loginEye"></i>
+                        </span>
+                    </div>
+
+                    <!-- Caps Lock Warning -->
+                    <div id="capsWarning" class="caps-warning mt-1">
+                        <i class="bi bi-exclamation-circle"></i> Caps Lock is ON
+                    </div>
+
+                    <!-- Strength Bar -->
+                   @*  <div class="strength-bar mt-1">
+                        <div id="strengthFill" class="strength-fill"></div>
+                    </div> *@
+                </div>
+
+                <!-- SUBMIT -->
+                <button type="submit" class="btn-auth-submit mt-3">
+                    <i class="bi bi-box-arrow-in-right me-2"></i>
+                    Sign In
+                </button>
+            </form>
+
+            <div class="auth-links mt-3 text-center">
+                <a asp-controller="Auth" asp-action="ForgotPassword">Forgot password?</a> ·
+                <a asp-controller="Auth" asp-action="Signup">Create account</a>
+            </div>
+        </div>
+
+        <p class="auth-footer text-center mt-3">Contact your administrator for access issues.</p>
+    </div>
+
+    <script>
+        /* 👁️ Toggle Password */
+        function togglePwd() {
+            const input = document.getElementById("loginPwd");
+            const icon = document.getElementById("loginEye");
+            input.type = input.type === "password" ? "text" : "password";
+            icon.classList.toggle("bi-eye");
+            icon.classList.toggle("bi-eye-slash");
+        }
+
+        /* 🔒 Password Strength */
+        function checkStrength(password) {
+            const bar = document.getElementById("strengthFill");
+            let strength = 0;
+            if (password.length > 5) strength++;
+            if (password.match(/[A-Z]/)) strength++;
+            if (password.match(/[0-9]/)) strength++;
+            if (password.match(/[^A-Za-z0-9]/)) strength++;
+            const colors = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e"];
+            const widths = ["25%", "50%", "75%", "100%"];
+            bar.style.width = password.length === 0 ? "0%" : widths[strength - 1] || "25%";
+            bar.style.background = colors[strength - 1] || "#ef4444";
+        }
+
+        /* ⚠️ Caps Lock Detection */
+        function checkCaps(e) {
+            const warning = document.getElementById("capsWarning");
+            warning.style.display = (e.getModifierState && e.getModifierState("CapsLock")) ? "block" : "none";
+        }
+
+        /* 🌙 Dark/Light Mode Toggle with System Detection */
+        const toggle = document.getElementById("themeToggle");
+        const body = document.body;
+
+        function applyTheme(theme) {
+            body.classList.remove("light-mode", "dark-mode");
+            body.classList.add(theme);
+            toggle.className = theme === "dark-mode" ? "bi bi-sun-fill" : "bi bi-moon-fill";
+            localStorage.setItem("theme", theme);
+        }
+
+        toggle.addEventListener("click", () => {
+            const newTheme = body.classList.contains("dark-mode") ? "light-mode" : "dark-mode";
+            applyTheme(newTheme);
+        });
+
+        // Load theme: localStorage > system preference
+        const savedTheme = localStorage.getItem("theme");
+        if (savedTheme) {
+            applyTheme(savedTheme);
+        } else {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            applyTheme(prefersDark ? 'dark-mode' : 'light-mode');
+        }
+    </script>
+</body>
+</html>

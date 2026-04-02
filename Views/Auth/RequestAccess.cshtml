@@ -1,0 +1,64 @@
+@model OracleSqlPortal.Models.AccessRequest
+@{
+    ViewData["Title"] = "Request Access";
+    var environments = ViewBag.Environments as List<string> ?? new List<string>();
+}
+
+<div class="d-flex align-items-start justify-content-between mb-4">
+    <div>
+        <p class="page-title"><i class="bi bi-hand-index-fill me-2" style="color:var(--brand)"></i>Request Additional Access</p>
+        <p class="page-subtitle">Submit a request for additional permissions — admin will review and approve</p>
+    </div>
+</div>
+
+<div class="card" style="max-width:600px">
+    <div class="card-header"><i class="bi bi-shield-plus me-2" style="color:var(--brand)"></i>New Access Request</div>
+    <div class="card-body">
+
+        <!-- Display TempData messages -->
+        @if (TempData["AccessError"] != null)
+        {
+            <div class="alert alert-warning">@TempData["AccessError"]</div>
+        }
+        @if (TempData["AccessSuccess"] != null)
+        {
+            <div class="alert alert-success">@TempData["AccessSuccess"]</div>
+        }
+
+        <form method="post" asp-action="RequestAccess">
+            @Html.AntiForgeryToken()
+
+            <div class="mb-3">
+                <label class="form-label">Environment</label>
+                <select name="Env" id="migEnv" class="form-select" required>
+                    <option value="" disabled selected>Select Environment</option>
+                    @foreach (var e in environments)
+                    {
+                        <option value="@e">@e</option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Permission Required</label>
+                <select name="Operation" class="form-select" required>
+                    <option value="" disabled selected>Select Permission</option>
+                    @foreach (var op in OracleSqlPortal.Models.SqlOps.All)
+                    {
+                        <option value="@op">@op</option>
+                    }
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label">Business Reason</label>
+                <textarea name="Reason" class="form-control" rows="4" placeholder="Explain why you need this access..." style="height:auto;min-height:100px;resize:vertical" required></textarea>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-run"><i class="bi bi-send me-2"></i>Submit Request</button>
+                <a asp-controller="Query" asp-action="Index" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,902 @@
+@model OracleSqlPortal.Models.AdminConfigViewModel
+@{
+    ViewData["Title"] = "Admin Console";
+    string[] allOps = OracleSqlPortal.Models.SqlOps.All;
+    string tab = Model.ActiveTab;
+    int pendingSignups = Model.PendingUsers.Count;
+    int pendingAccess = Model.AccessRequests.Count(r => r.Status == "Pending");
+
+    string EnvColor(string k) => k.ToUpper() switch
+    {
+        "SIT" => "#38bdf8",
+        "UAT" => "#c084fc",
+        "PROD" => "#f97316",
+        _ => "#22c55e"
+    };
+    string EnvClass(string k) => k.ToUpper() switch
+    {
+        "SIT" => "env-color-sit",
+        "UAT" => "env-color-uat",
+        "PROD" => "env-color-prod",
+        _ => "env-color-dev"
+    };
+}
+<div class="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2 d-none">
+    <div>
+        <p class="page-title"><i class="bi bi-shield-fill me-2" style="color:var(--brand)"></i>Admin Console</p>
+        <p class="page-subtitle">Users · Permissions · Oracle Connections · Portal DB · Audit Logs</p>
+    </div>
+    <a asp-controller="Admin" asp-action="AdminLogout" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-box-arrow-right me-1"></i>Logout
+    </a>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.SuccessMessage))
+{
+    <div class="alert-success-custom mb-3"><i class="bi bi-check-circle-fill"></i> @Model.SuccessMessage</div>
+}
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert-danger-custom mb-3"><i class="bi bi-exclamation-triangle-fill"></i> @Model.ErrorMessage</div>
+}
+
+<!-- TABS -->
+<div class="d-flex gap-2 mb-4 flex-wrap">
+    @{
+        var tabs = new (string id, string icon, string label, int badge)[]
+        {
+    ("approvals",        "bi-person-check-fill",    "Approvals",         pendingSignups),
+    ("access",           "bi-shield-plus",          "Access Requests",   pendingAccess),
+    ("users",            "bi-people-fill",          "Users",             Model.Users.Count),
+    ("connections",      "bi-hdd-network",          "Connections",       Model.Environments.Count),
+    ("portaldb",         "bi-database-gear",        "Portal DB",         0),
+    ("queryhistory",     "bi-terminal",             "Query History",     Model.QueryHistory.Count),
+    ("loginhistory",     "bi-clock-history",        "Login History",     Model.LoginHistory.Count),
+    ("migrationhistory", "bi-file-earmark-arrow-up","Migration Log",     Model.MigrationHistory.Count),
+    ("activityhistory",  "bi-activity",             "Activity History",  Model.AdminActivity.Count),
+    ("logs", "bi-journal-text", "Logs", Model.ErrorLog.Count),
+        };
+    }
+    @foreach (var (id, icon, label, badge) in tabs)
+    {
+        bool alert = (id == "approvals" || id == "access") && badge > 0;
+        <a href="@Url.Action("Index", new { tab=id })" class="admin-tab @(tab==id?"active":"")">
+            <i class="bi @icon"></i>@label
+            @if (badge > 0)
+            {
+                <span class="badge rounded-pill ms-1"
+                      style="background:@(alert?"var(--brand)":"var(--surface4)");
+                         color:@(alert?"#fff":"var(--muted)");font-size:0.6rem;padding:2px 7px">@badge</span>
+            }
+        </a>
+    }
+</div>
+
+<!-- ══ APPROVALS ══════════════════════════════════════════════════ -->
+@if (tab == "approvals")
+{
+    if (!Model.PendingUsers.Any())
+    {
+        <div class="card p-5 text-center"><i class="bi bi-check-circle" style="font-size:2.5rem;color:var(--success)"></i><p class="mt-3">No pending signup requests.</p></div>
+    }
+
+    @foreach (var u in Model.PendingUsers)
+    {
+        <div class="card mb-3">
+            <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <strong>@u.DisplayName</strong>
+                    <span style="font-size:0.75rem;color:var(--muted);margin-left:0.5rem">@u.Username</span>
+                    @if (!string.IsNullOrEmpty(u.Email))
+                    {
+                        <span style="font-size:0.75rem;color:var(--muted);margin-left:0.5rem">· @u.Email</span>
+                    }
+                </div>
+                <div class="d-flex gap-2">
+                    <form method="post" asp-action="ApproveUser">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="username" value="@u.Username" />
+                        <button class="btn btn-success btn-sm"><i class="bi bi-check2 me-1"></i>Approve</button>
+                    </form>
+                    <form method="post" asp-action="RejectUserRequest">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="username" value="@u.Username" />
+                        <button class="btn btn-danger btn-sm"><i class="bi bi-x me-1"></i>Reject</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<!-- ══ ACCESS REQUESTS ════════════════════════════════════════════ -->
+@if (tab == "access")
+{
+    var pending = Model.AccessRequests.Where(r => r.Status == "Pending").ToList();
+    var resolved = Model.AccessRequests.Where(r => r.Status != "Pending").ToList();
+
+    if (!pending.Any() && !resolved.Any())
+    {
+        <div class="card p-5 text-center"><i class="bi bi-shield-check" style="font-size:2.5rem;color:var(--success)"></i><p class="mt-3">No access requests.</p></div>
+    }
+
+    @foreach (var req in pending)
+    {
+        <div class="card mb-3" style="border-left:3px solid var(--brand)">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <strong>@req.DisplayName</strong>
+                        <span style="font-size:0.73rem;color:var(--muted);margin-left:0.4rem">(@req.Username)</span><br />
+                        <span class="op-chip allowed" style="font-size:0.67rem;margin-top:0.3rem">@req.Operation</span>
+                        <span style="font-size:0.75rem;margin-left:0.4rem">on <strong>@req.Env</strong></span>
+                        @if (!string.IsNullOrEmpty(req.Reason))
+                        {
+                            <p style="font-size:0.78rem;color:var(--muted);margin-top:0.4rem;margin-bottom:0">@req.Reason</p>
+                        }
+                    </div>
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <form method="post" asp-action="ApproveAccess">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@req.Id" />
+                            <button class="btn btn-success btn-sm"><i class="bi bi-check2-circle me-1"></i>Approve</button>
+                        </form>
+                        <form method="post" asp-action="RejectAccess">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@req.Id" />
+                            <button class="btn btn-danger btn-sm"><i class="bi bi-x-circle me-1"></i>Reject</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    @if (resolved.Any())
+    {
+        <p style="font-size:0.73rem;color:var(--muted);margin-top:1.5rem;margin-bottom:0.75rem">Resolved requests</p>
+        @foreach (var req in resolved.Take(50))
+        {
+            <div class="card mb-2" style="opacity:0.7">
+                <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2" style="padding:0.6rem 1rem">
+                    <span style="font-size:0.78rem"><strong>@req.DisplayName</strong> — @req.Operation on @req.Env</span>
+                    <span class="op-chip @(req.Status=="Approved"?"allowed":"denied")" style="font-size:0.62rem">@req.Status</span>
+                </div>
+            </div>
+        }
+    }
+}
+
+<!-- ══ USERS ══════════════════════════════════════════════════════ -->
+@if (tab == "users")
+{
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-person-plus me-2" style="color:var(--brand)"></i>Add User</div>
+        <div class="card-body">
+            <form method="post" asp-action="AddUser">
+                @Html.AntiForgeryToken()
+                <div class="row g-2">
+                    <div class="col-md-3"><input name="username" class="form-control" placeholder="Username" required /></div>
+                    <div class="col-md-3"><input name="password" class="form-control" type="password" placeholder="Password" required /></div>
+                    <div class="col-md-3"><input name="displayName" class="form-control" placeholder="Display Name" required /></div>
+                    <div class="col-md-2"><input name="email" class="form-control" type="email" placeholder="Email (optional)" /></div>
+                    <div class="col-md-1"><button class="btn btn-run w-100"><i class="bi bi-plus-lg"></i></button></div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @foreach (var u in Model.Users)
+    {
+        <div class="card mb-3" id="user-@u.Username">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="user-avatar" style="width:28px;height:28px;font-size:0.7rem;background:var(--surface4);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700">
+                        @(string.Concat((u.DisplayName ?? u.Username).Split(' ').Take(2).Select(w => w.Length > 0 ? w[0].ToString() : "")).ToUpper())
+                    </span>
+                    <strong>@u.DisplayName</strong>
+                    <span style="font-size:0.73rem;color:var(--muted)">@u.Username</span>
+                    @if (u.IsAdmin)
+                    {
+                        <span style="background:var(--brand-glow);color:var(--brand);border-radius:4px;font-size:0.57rem;font-weight:700;padding:1px 6px">ADMIN</span>
+                    }
+                    @if (u.IsMigration)
+                    {
+                        <span style="background:rgba(192,132,252,0.15);color:#c084fc;border-radius:4px;font-size:0.57rem;font-weight:700;padding:1px 6px">MIGRATE</span>
+                    }
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <!-- Single migration access toggle -->
+                    <form method="post" asp-action="SetMigrationAccess" style="margin:0">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="username" value="@u.Username" />
+                        <input type="hidden" name="hasMigration" value="@(!u.IsMigration ? "true" : "false")" />
+                        <button type="submit" class="btn btn-sm @(u.IsMigration ? "btn-outline-warning" : "btn-outline-secondary")"
+                                title="@(u.IsMigration ? "Revoke Migration Access" : "Grant Migration Access")"
+                                style="font-size:0.72rem">
+                            <i class="bi bi-@(u.IsMigration ? "dash-circle" : "arrow-up-right-square") me-1"></i>
+                            @(u.IsMigration ? "Revoke Migration" : "Grant Migration")
+                        </button>
+                    </form>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="toggleUserPanel('@u.Username')">
+                        <i class="bi bi-gear"></i> Edit
+                    </button>
+                    <form method="post" asp-action="DeleteUser" onsubmit="return confirm('Delete @u.Username?')">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="username" value="@u.Username" />
+                        <button class="btn btn-danger btn-sm"><i class="bi bi-trash3"></i></button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Collapsible edit panel -->
+            <div id="panel-@u.Username" style="display:none">
+                <div class="card-body" style="border-top:1px solid var(--border)">
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Display Name</label>
+                            <input id="dn-@u.Username" class="form-control" value="@u.DisplayName" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Email</label>
+                            <input id="em-@u.Username" class="form-control" type="email" value="@u.Email" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">New Password (leave blank to keep)</label>
+                            <input id="pw-@u.Username" class="form-control" type="password" placeholder="••••••••" />
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-run w-100 btn-sm" onclick="saveUser('@u.Username')">
+                                <i class="bi bi-floppy me-1"></i>Save
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Permissions by environment -->
+                    @foreach (var (envName, envCfg) in Model.Environments)
+                    {
+                        var granted = u.Permissions.TryGetValue(envName, out var ops) ? ops : new List<string>();
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="proto-badge proto-tcp" style="background:rgba(0,0,0,0.1);color:@EnvColor(envName);border-color:@EnvColor(envName)">@envName</span>
+                                <span style="font-size:0.72rem;color:var(--muted)">@(envCfg.Label ?? "")</span>
+                            </div>
+                            <div class="perm-grid" id="permgrid-@u.Username-@envName">
+                                @foreach (var op in allOps)
+                                {
+                                    bool chk = granted.Contains(op, StringComparer.OrdinalIgnoreCase);
+                                    <span>
+                                        <input type="checkbox" class="perm-check" id="p-@u.Username-@envName-@op"
+                                               name="perms[@envName]" value="@op" @(chk ? "checked" : "") />
+                                        <label class="perm-label" for="p-@u.Username-@envName-@op"
+                                               title="@op">@op</label>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div id="save-msg-@u.Username" style="font-size:0.75rem;display:none;margin-top:0.5rem"></div>
+                </div>
+            </div>
+        </div>
+    }
+}
+@if (tab == "logs")
+{
+    <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span>
+                <i class="bi bi-journal-text me-2" style="color:var(--brand)"></i>
+                System Logs
+            </span>
+            <span class="stat-pill">@Model.ErrorLog.Count entries</span>
+        </div>
+
+        <div style="max-height:620px;overflow-y:auto">
+            <table class="result-table">
+                <thead>
+                    <tr>
+                     
+                        <th>User</th>
+                        <th>Timestamp</th>
+                        <th>Method</th>
+                        <th>Message</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var log in Model.ErrorLog)
+                    {
+                        <tr>
+                            <!-- ID -->
+                          
+
+                            <!-- Username -->
+                            <td>@(string.IsNullOrEmpty(log.Username) ? "System" : log.Username)</td>
+
+                            <!-- Timestamp -->
+                            <td style="font-size:0.72rem;color:var(--muted)">
+                                @log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")
+                            </td>
+
+                            <!-- Level -->
+                            <td>
+                                <span class="op-chip @(log.Method.ToLower().Contains("error") ? "denied" : "allowed")"
+                                      style="font-size:0.62rem">
+                                    @(log.Method)
+                                </span>
+                            </td>
+
+                            <!-- Message -->
+                            <td>@log.Message</td>
+
+                            <!-- Stack Trace -->
+                            <td style="font-size:0.72rem; color:var(--muted); max-width:600px; max-height:150px; overflow:auto; white-space:pre-wrap; word-wrap:break-word;">
+                                @log.StackTrace
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+<!-- ══ CONNECTIONS ════════════════════════════════════════════════ -->
+@if (tab == "connections")
+{
+    <!-- Add new connection -->
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-plus-circle me-2" style="color:var(--brand)"></i>Add New Connection</div>
+        <div class="card-body">
+            <form method="post" asp-action="AddConnection">
+                @Html.AntiForgeryToken()
+                <div class="row g-2">
+                    <div class="col-md-2"><input name="envKey" class="form-control" placeholder="Key (e.g. UAT2)" required /></div>
+                    <div class="col-md-2"><input name="label" class="form-control" placeholder="Label" /></div>
+                    <div class="col-md-1">
+                        <select name="protocol" class="form-select">
+                            <option value="TCP">TCP</option>
+                            <option value="TCPS">TCPS</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2"><input name="host" class="form-control" placeholder="Host" /></div>
+                    <div class="col-md-1"><input name="port" class="form-control" placeholder="Port" value="1521" /></div>
+                    <div class="col-md-2"><input name="serviceName" class="form-control" placeholder="Service Name" /></div>
+                    <div class="col-md-1"><input name="userId" class="form-control" placeholder="User ID" /></div>
+                    <div class="col-md-1"><input name="password" class="form-control" type="password" placeholder="Password" /></div>
+                </div>
+                <div class="mt-2">
+                    <button class="btn btn-run btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Connection</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Existing connections -->
+    @foreach (var (envKey, cfg) in Model.Environments)
+    {
+        <div class="card mb-3 @EnvClass(envKey)">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="proto-badge @(cfg.Protocol?.ToUpper()=="TCPS"?"proto-tcps":"proto-tcp")">@(cfg.Protocol ?? "TCP")</span>
+                    <strong>@envKey</strong>
+                    @if (!string.IsNullOrEmpty(cfg.Label))
+                    {
+                        <span style="font-size:0.73rem;color:var(--muted)">@cfg.Label</span>
+                    }
+                    <span style="font-size:0.73rem;color:var(--muted)">@(cfg.Host ?? "—"):@(cfg.Port ?? "1521") / @(cfg.ServiceName ?? "—")</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-info btn-sm" onclick="testConn('@envKey', this)">
+                        <i class="bi bi-activity me-1"></i>Test
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="toggleConnPanel('@envKey')">
+                        <i class="bi bi-pencil me-1"></i>Edit
+                    </button>
+                    <form method="post" asp-action="DeleteConnection" onsubmit="return confirm('Remove @envKey?')">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="envKey" value="@envKey" />
+                        <button class="btn btn-danger btn-sm"><i class="bi bi-trash3"></i></button>
+                    </form>
+                </div>
+            </div>
+            <div id="conn-panel-@envKey" style="display:none">
+                <div class="card-body" style="border-top:1px solid var(--border)">
+                    <form method="post" asp-action="SaveSingleConnection">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="envKey" value="@envKey" />
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label">Label</label>
+                                <input name="label" class="form-control" value="@cfg.Label" />
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label">Protocol</label>
+                                <select name="protocol" class="form-select">
+                                    <option value="TCP" selected="@(cfg.Protocol?.ToUpper() != "TCPS")">TCP</option>
+                                    <option value="TCPS" selected="@(cfg.Protocol?.ToUpper() == "TCPS")">TCPS</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Host</label>
+                                <input name="host" class="form-control" value="@cfg.Host" />
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label">Port</label>
+                                <input name="port" class="form-control" value="@(cfg.Port ?? "1521")" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Service Name</label>
+                                <input name="serviceName" class="form-control" value="@cfg.ServiceName" />
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label">User ID</label>
+                                <input name="userId" class="form-control" value="@cfg.UserId" />
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label">Password</label>
+                                <input name="password" class="form-control" type="password" value="@cfg.Password" />
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-3">
+                                <label class="form-label">SqlNet.ora Path</label>
+                                <input name="sqlNetOraPath" class="form-control" value="@cfg.SqlNetOraPath" />
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Wallet Path</label>
+                                <input name="walletPath" class="form-control" value="@cfg.WalletPath" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Trust Store</label>
+                                <input name="trustStore" class="form-control" value="@cfg.TrustStore" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Key Store</label>
+                                <input name="keyStore" class="form-control" value="@cfg.KeyStore" />
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Key Store Pwd</label>
+                                <input name="keyStorePwd" class="form-control" type="password" value="@cfg.KeyStorePwd" />
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-run btn-sm"><i class="bi bi-floppy me-1"></i>Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+<!-- ══ PORTAL DB ══════════════════════════════════════════════════ -->
+@if (tab == "portaldb")
+{
+    <div class="card mb-4">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-database-gear me-2" style="color:var(--brand)"></i>Portal DB Configuration</span>
+            <button class="btn btn-outline-info btn-sm" id="testPdbBtn" onclick="testPortalDb()">
+                <i class="bi bi-activity me-1"></i>Test Connection
+            </button>
+        </div>
+        <div class="card-body">
+            <p style="font-size:0.78rem;color:var(--muted);margin-bottom:1rem">
+                <i class="bi bi-info-circle me-1"></i>
+                Only audit logs (query history, login history, migration logs, admin activity) are stored in this database.
+                Users, permissions and connections are stored in appsettings.json.
+            </p>
+            <form method="post" asp-action="SavePortalDb">
+                @Html.AntiForgeryToken()
+                <div class="row g-2 mb-3">
+                    <div class="col-12">
+                        <label class="form-label">Raw Connection String (overrides fields below)</label>
+                        <input name="PortalDbConnStr" class="form-control" value="@Model.PortalDbConnStr"
+                               placeholder="User Id=...;Password=...;Data Source=...;" />
+                    </div>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-1">
+                        <label class="form-label">Protocol</label>
+                        <select name="PdbProtocol" class="form-select">
+                            <option value="TCP" selected="@(Model.PdbProtocol?.ToUpper() != "TCPS")">TCP</option>
+                            <option value="TCPS" selected="@(Model.PdbProtocol?.ToUpper() == "TCPS")">TCP</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Host</label>
+                        <input name="PdbHost" class="form-control" value="@Model.PdbHost" />
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label">Port</label>
+                        <input name="PdbPort" class="form-control" value="@Model.PdbPort" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Service Name</label>
+                        <input name="PdbService" class="form-control" value="@Model.PdbService" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">User ID</label>
+                        <input name="PdbUser" class="form-control" value="@Model.PdbUser" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Password</label>
+                        <input name="PdbPassword" class="form-control" type="password" value="@Model.PdbPassword" />
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <button class="btn btn-run btn-sm"><i class="bi bi-floppy me-1"></i>Save Portal DB</button>
+                </div>
+            </form>
+            @if (!string.IsNullOrEmpty(Model.PortalDbDesc))
+            {
+                <div class="mt-3" style="background:var(--surface3);border-radius:8px;padding:0.65rem 1rem;font-size:0.72rem;font-family:'JetBrains Mono',monospace;color:var(--muted)">
+                    <i class="bi bi-link-45deg me-1"></i>@Model.PortalDbDesc
+                </div>
+            }
+        </div>
+    </div>
+}
+
+<!-- ══ QUERY HISTORY ══════════════════════════════════════════════ -->
+@if (tab == "queryhistory")
+{
+        <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span>
+                    <i class="bi bi-terminal me-2" style="color:var(--brand)"></i>
+                    Query History
+                </span>
+                <span class="stat-pill">@Model.QueryHistory.Count entries</span>
+            </div>
+
+            <div style="max-height:620px;overflow-y:auto">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th style="text-align:center">User</th>
+                            <th style="text-align:center">Environment</th>
+                            <th style="text-align:center;width:40%">SQL</th>
+                            <th style="text-align:center">Rows</th>
+                            <th style="text-align:center">ms</th>
+                            <th style="text-align:center">Status</th>
+                            <th style="text-align:center">Executed At</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                    @foreach (var q in Model.QueryHistory)
+                    {
+                                <tr>
+                                    <!-- USER -->
+                                    <td style="text-align:center">
+                                        <strong>@q.DisplayName</strong><br />
+                                        <span style="font-size:0.68rem;color:var(--muted)">
+                                    @q.Username
+                                        </span>
+                                    </td>
+
+                                    <!-- ENV -->
+                                    <td style="text-align:center">
+                                        <span class="proto-badge proto-tcp" style="font-size:0.62rem">
+                                    @q.Environment
+                                        </span>
+                                    </td>
+
+                                    <!-- SQL (UPDATED 🔥) -->
+                                    <td style="text-align:left;max-width:600px;">
+                                        <div style="display:flex;gap:6px;margin-bottom:4px;">
+
+                                            <!-- Copy Button -->
+                                            <button type="button"
+                                                    style="font-size:0.65rem;padding:2px 6px;cursor:pointer;"
+                                                    onclick="navigator.clipboard.writeText(`@q.Sql`)">
+                                                Copy
+                                            </button>
+
+                                            <!-- Expand Button -->
+                                            <button type="button"
+                                                    style="font-size:0.65rem;padding:2px 6px;cursor:pointer;"
+                                                    onclick="toggleSql(this)">
+                                                Expand
+                                            </button>
+                                        </div>
+
+                                        <!-- SQL BOX -->
+                                        <div class="sql-box" style="
+                                    max-height:120px;
+                                    overflow:auto;
+                                    white-space:pre-wrap;
+                                    word-break:break-word;
+                                    font-family:'JetBrains Mono', monospace;
+                                    font-size:0.72rem;
+                                    background:#0f172a;
+                                    color:#e5e7eb;
+                                    padding:8px;
+                                    border-radius:6px;
+                                    border:1px solid #1f2937;
+                                        ">
+                                    @q.Sql
+                                        </div>
+                                    </td>
+
+                                    <!-- ROWS -->
+                                    <td style="text-align:center">@q.Rows</td>
+
+                                    <!-- MS -->
+                                    <td style="text-align:center">@q.DurationMs</td>
+
+                                    <!-- STATUS -->
+                                    <td style="text-align:center">
+                                @if (q.IsError)
+                                {
+                                                <span class="op-chip denied" style="font-size:0.62rem">
+                                                    Error
+                                                </span>
+                                }
+                                else
+                                {
+                                                <span class="op-chip allowed" style="font-size:0.62rem">
+                                                    OK
+                                                </span>
+                                }
+                                    </td>
+
+                                    <!-- DATE -->
+                                    <td style="text-align:center;font-size:0.72rem;color:var(--muted)">
+                                @q.ExecutedAt.ToString("yyyy-MM-dd HH:mm:ss")
+                                    </td>
+                                </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+}
+
+<!-- 🔧 SCRIPT -->
+<script id="sql-expand-script">
+    function toggleSql(btn) {
+        const box = btn.parentElement.nextElementSibling;
+
+        if (box.style.maxHeight === "none") {
+            box.style.maxHeight = "120px";
+            btn.innerText = "Expand";
+        } else {
+            box.style.maxHeight = "none";
+            btn.innerText = "Collapse";
+        }
+    }
+</script>
+<!-- ══ LOGIN HISTORY ══════════════════════════════════════════════ -->
+@if (tab == "loginhistory")
+{
+    <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-clock-history me-2" style="color:var(--brand)"></i>Login History</span>
+            <span class="stat-pill">@Model.LoginHistory.Count entries</span>
+        </div>
+        <div style="max-height:620px;overflow-y:auto">
+            <table class="result-table">
+                <thead><tr><th>Username</th><th>IP Address</th><th>Status</th><th>Login At</th></tr></thead>
+                <tbody>
+                    @foreach (var l in Model.LoginHistory)
+                    {
+                        <tr>
+                            <td><strong>@l.Username</strong></td>
+                            <td style="font-family:'JetBrains Mono',monospace;font-size:0.73rem">@l.IpAddress</td>
+                            <td>
+                                @if (l.Success)
+                                {
+                                    <span class="op-chip allowed" style="font-size:0.62rem"><i class="bi bi-check2 me-1"></i>Success</span>
+                                }
+                                else
+                                {
+                                    <span class="op-chip denied" style="font-size:0.62rem"><i class="bi bi-x me-1"></i>Failed</span>
+                                }
+                            </td>
+                            <td style="font-size:0.72rem;color:var(--muted)">@l.LoginAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<!-- ══ MIGRATION LOG ══════════════════════════════════════════════ -->
+@if (tab == "migrationhistory")
+{
+    <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-file-earmark-arrow-up me-2" style="color:#c084fc"></i>Migration Log</span>
+            <span class="stat-pill">@Model.MigrationHistory.Count entries</span>
+        </div>
+        <div style="max-height:620px;overflow-y:auto">
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Environment</th>
+                        <th>File</th>
+                        <th>Stmts</th>
+                        <th>OK</th>
+                        <th>Err</th>
+                        <th>Outcome</th>
+                        <th>Executed At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in Model.MigrationHistory)
+                    {
+                        <tr>
+                            <td><strong>@m.DisplayName</strong><br /><span style="font-size:0.68rem;color:var(--muted)">@m.Username</span></td>
+                            <td><span class="proto-badge proto-tcp" style="font-size:0.62rem">@m.Environment</span></td>
+                            <td style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;max-width:220px;overflow:hidden;text-overflow:ellipsis">@m.FileName</td>
+                            <td style="text-align:center">@m.TotalStmts</td>
+                            <td style="text-align:center;color:var(--success)">@m.OkStmts</td>
+                            <td style="text-align:center;color:var(--danger)">@m.ErrStmts</td>
+                            <td>
+                                @if (m.Outcome == "COMMITTED")
+                                {
+                                    <span class="op-chip allowed" style="font-size:0.62rem">@m.Outcome</span>
+                                }
+                                else
+                                {
+                                    <span class="op-chip denied" style="font-size:0.62rem">@m.Outcome</span>
+                                }
+                            </td>
+                            <td style="font-size:0.72rem;color:var(--muted)">@m.ExecutedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+<!-- ══ ACTIVITY HISTORY ═══════════════════════════════════════════ -->
+@if (tab == "activityhistory")
+{
+    <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-activity me-2" style="color:var(--brand)"></i>Admin Activity History</span>
+            <span class="stat-pill">@Model.AdminActivity.Count entries</span>
+        </div>
+        @if (!Model.AdminActivity.Any())
+        {
+            <div class="card-body text-center" style="padding:3rem">
+                <i class="bi bi-journal-check" style="font-size:2.5rem;color:var(--muted)"></i>
+                <p class="mt-3" style="color:var(--muted)">No admin activity recorded yet.</p>
+                <p style="font-size:0.78rem;color:var(--muted)">Activity is recorded once the Portal DB is configured.</p>
+            </div>
+        }
+        else
+        {
+            <div style="max-height:620px;overflow-y:auto">
+                <table class="result-table">
+                    <thead><tr><th>Admin</th><th>Action</th><th>Target</th><th>Details</th><th>Performed At</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in Model.AdminActivity)
+                        {
+                            <tr>
+                                <td><strong>@a.AdminUser</strong></td>
+                                <td>
+                                    @{
+                                        var (actionColor, actionIcon) = a.Action switch
+                                        {
+                                            var x when x.Contains("Delete") || x.Contains("Reject") => ("var(--danger)", "bi-trash3"),
+                                            var x when x.Contains("Add") || x.Contains("Approve") || x.Contains("Grant") => ("var(--success)", "bi-check2-circle"),
+                                            _ => ("var(--brand)", "bi-pencil")
+                                        };
+                                    }
+                                    <span style="font-size:0.78rem;color:@actionColor;font-weight:600">
+                                        <i class="bi @actionIcon me-1"></i>@a.Action
+                                    </span>
+                                </td>
+                                <td style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;font-weight:600">@a.Target</td>
+                                <td style="font-size:0.75rem;color:var(--muted);max-width:350px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="@a.Details">@a.Details</td>
+                                <td style="font-size:0.72rem;color:var(--muted);white-space:nowrap">@a.PerformedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+}
+
+@section Scripts {
+    <script>
+        function toggleUserPanel(un) {
+            var p = document.getElementById('panel-'+un);
+            p.style.display = p.style.display === 'none' ? 'block' : 'none';
+        }
+        function toggleConnPanel(key) {
+            var p = document.getElementById('conn-panel-'+key);
+            p.style.display = p.style.display === 'none' ? 'block' : 'none';
+        }
+        function togglePwd(id) {
+            var i = document.getElementById(id);
+            i.type = i.type === 'password' ? 'text' : 'password';
+        }
+
+        function saveUser(un) {
+            var form  = new FormData();
+            var token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+            form.append('username',    un);
+            form.append('displayName', document.getElementById('dn-'+un).value);
+            form.append('email',       document.getElementById('em-'+un).value);
+            var pw = document.getElementById('pw-'+un).value;
+            if (pw) form.append('password', pw);
+
+            // Collect permission checkboxes
+            var grid = document.getElementById('panel-'+un);
+            grid.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+                if (cb.checked) form.append(cb.name, cb.value);
+            });
+            form.append('__RequestVerificationToken', token);
+
+            fetch('@Url.Action("SaveUserAjax", "Admin")', { method:'POST', body: form })
+                .then(r=>r.json())
+                .then(d=>{
+                    var msg = document.getElementById('save-msg-'+un);
+                    msg.style.display = 'block';
+                    if (d.ok) {
+                        msg.style.color = 'var(--success)';
+                        msg.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Saved successfully';
+                    } else {
+                        msg.style.color = 'var(--danger)';
+                        msg.innerHTML = '<i class="bi bi-x-circle me-1"></i>' + (d.error||'Error');
+                    }
+                    setTimeout(()=>{ msg.style.display='none'; }, 3000);
+                });
+        }
+
+        function testConn(env, btn) {
+            var orig = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing…';
+            btn.disabled = true;
+            var token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+            fetch('@Url.Action("TestConnection", "Admin")', {
+                method:'POST',
+                headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                body:'env='+encodeURIComponent(env)+'&__RequestVerificationToken='+encodeURIComponent(token)
+            }).then(r=>r.json()).then(d=>{
+                btn.disabled = false;
+                if (d.ok) {
+                    btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>' + d.ms + 'ms';
+                    btn.style.color = 'var(--success)';
+                } else {
+                    btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Failed';
+                    btn.style.color = 'var(--danger)';
+                    alert('Connection failed: ' + d.error);
+                }
+                setTimeout(()=>{ btn.innerHTML=orig; btn.style.color=''; }, 4000);
+            });
+        }
+
+        function testPortalDb() {
+            var btn = document.getElementById('testPdbBtn');
+            var orig = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Testing…';
+            btn.disabled = true;
+            var token = document.querySelector('input[name="__RequestVerificationToken"]').value;
+            fetch('@Url.Action("TestPortalDb", "Admin")', {
+                method:'POST',
+                headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                body:'__RequestVerificationToken='+encodeURIComponent(token)
+            }).then(r=>r.json()).then(d=>{
+                btn.disabled = false;
+                if (d.ok) {
+                    btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>' + d.ms + 'ms — Connected';
+                    btn.style.borderColor='rgba(34,197,94,0.4)'; btn.style.color='var(--success)';
+                } else {
+                    btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Failed';
+                    btn.style.color='var(--danger)';
+                    alert('Portal DB error: ' + d.error);
+                }
+                setTimeout(()=>{ btn.innerHTML=orig; btn.style.color=''; btn.style.borderColor=''; }, 5000);
+            });
+        }
+    </script>
+}

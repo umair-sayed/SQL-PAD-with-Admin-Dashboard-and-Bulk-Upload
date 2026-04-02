@@ -1,0 +1,173 @@
+@{
+    ViewData["Title"] = "View Object";
+    var envConfigs = ViewBag.EnvConfigs as Dictionary<string, OracleSqlPortal.Models.EnvConfig>
+                       ?? new Dictionary<string, OracleSqlPortal.Models.EnvConfig>();
+    string selectedEnv = ViewBag.Env ?? "DEV";
+    string objectName  = ViewBag.ObjectName ?? "";
+    string objectType  = ViewBag.ObjectType ?? "";
+    string sqlText     = ViewBag.SqlText ?? "";
+    bool found         = ViewBag.Found == true;
+    string? error      = ViewBag.Error;
+
+    var typeIcons = new Dictionary<string,string>
+    {
+        ["PROCEDURE"]    = "bi-gear-fill",
+        ["FUNCTION"]     = "bi-lightning-fill",
+        ["PACKAGE"]      = "bi-boxes",
+        ["PACKAGE BODY"] = "bi-box-seam",
+        ["TABLE"]        = "bi-table",
+        ["VIEW"]         = "bi-eye-fill",
+        ["SEQUENCE"]     = "bi-123",
+        ["TRIGGER"]      = "bi-bolt-fill",
+        ["TYPE"]         = "bi-braces",
+    };
+    var typeColors = new Dictionary<string,string>
+    {
+        ["PROCEDURE"]    = "#f97316",
+        ["FUNCTION"]     = "#38bdf8",
+        ["PACKAGE"]      = "#c084fc",
+        ["PACKAGE BODY"] = "#a78bfa",
+        ["TABLE"]        = "#22c55e",
+        ["VIEW"]         = "#34d399",
+        ["SEQUENCE"]     = "#fbbf24",
+        ["TRIGGER"]      = "#fb7185",
+        ["TYPE"]         = "#818cf8",
+    };
+    string icon  = typeIcons.GetValueOrDefault(objectType,  "bi-braces-asterisk");
+    string color = typeColors.GetValueOrDefault(objectType, "#f97316");
+}
+
+<div class="d-flex align-items-start justify-content-between mb-4">
+    <div>
+        <p class="page-title"><i class="bi bi-eye-fill me-2" style="color:var(--brand)"></i>View Object Definition</p>
+        <p class="page-subtitle">Look up stored procedures, functions, packages, sequences, tables and views</p>
+    </div>
+</div>
+
+<!-- Search Card -->
+<div class="card mb-4">
+    <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-search" style="color:var(--brand)"></i>Object Lookup
+    </div>
+    <div class="card-body py-3">
+        <form method="post" asp-action="Lookup" id="lookupForm">
+            @Html.AntiForgeryToken()
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small text-muted mb-1">Environment</label>
+                    <select name="env" class="form-select">
+                        @foreach (var e in envConfigs.Keys)
+                        {
+                            <option value="@e" selected="@(e == selectedEnv)">
+                                @(envConfigs[e].Label ?? e)
+                            </option>
+
+                        }
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small text-muted mb-1">Object Name</label>
+                    <input type="text"
+                           name="objectName"
+                           value="@objectName"
+                           class="form-control"
+                           placeholder="e.g. GET_CUSTOMER_DATA, EMPLOYEE_SEQ, ACCOUNTS"
+                           style="font-family:'JetBrains Mono',monospace;text-transform:uppercase"
+                           autocomplete="off"
+                           autofocus />
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-run w-100" id="lookupBtn">
+                        <i class="bi bi-search me-2"></i>Lookup Object
+                    </button>
+                </div>
+            </div>
+            <p class="small mt-2 mb-0" style="color:var(--muted)">
+                <i class="bi bi-info-circle me-1"></i>
+                Supports: <strong style="color:var(--text)">Procedures, Functions, Packages, Tables, Views, Sequences, Triggers, Types</strong>
+            </p>
+        </form>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert-danger-custom mb-4 d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill"></i>@error
+    </div>
+}
+
+@if (found && !string.IsNullOrEmpty(sqlText))
+{
+    <!-- Object Header -->
+    <div class="card mb-0">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-3">
+                <span class="obj-type-badge" style="background:@(color)22;color:@color;border:1px solid @(color)44">
+                    <i class="bi @icon"></i> @objectType
+                </span>
+                <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:1rem">@objectName</span>
+                <span class="stat-pill">@selectedEnv</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" id="copyDefBtn">
+                    <i class="bi bi-clipboard me-1"></i>Copy
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" id="wrapBtn">
+                    <i class="bi bi-text-wrap me-1"></i>Wrap
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="sql-definition-wrap" id="defWrap">
+                <pre id="sqlDefinition" class="sql-definition">@sqlText</pre>
+            </div>
+        </div>
+        <div class="card-footer d-flex align-items-center justify-content-between py-2"
+             style="background:var(--surface3);border-top:1px solid var(--border)">
+            <span class="stat-pill">
+                <i class="bi bi-file-code"></i>
+                @sqlText.Split('\n').Length lines
+            </span>
+            <span class="stat-pill">
+                <i class="bi bi-fonts"></i>
+                @sqlText.Length chars
+            </span>
+        </div>
+    </div>
+}
+
+@section Scripts {
+<script>
+document.getElementById('lookupForm').addEventListener('submit', () => {
+    const inp = document.querySelector('input[name="objectName"]');
+    inp.value = inp.value.toUpperCase();
+    const btn = document.getElementById('lookupBtn');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Looking up…';
+    btn.disabled = true;
+});
+
+const copyBtn = document.getElementById('copyDefBtn');
+if (copyBtn) {
+    copyBtn.addEventListener('click', () => {
+        const txt = document.getElementById('sqlDefinition').textContent;
+        navigator.clipboard.writeText(txt);
+        copyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Copied!';
+        setTimeout(() => copyBtn.innerHTML = '<i class="bi bi-clipboard me-1"></i>Copy', 1500);
+    });
+}
+
+const wrapBtn = document.getElementById('wrapBtn');
+if (wrapBtn) {
+    let wrapped = false;
+    wrapBtn.addEventListener('click', () => {
+        const pre = document.getElementById('sqlDefinition');
+        wrapped = !wrapped;
+        pre.style.whiteSpace = wrapped ? 'pre-wrap' : 'pre';
+        wrapBtn.innerHTML = wrapped
+            ? '<i class="bi bi-justify me-1"></i>Unwrap'
+            : '<i class="bi bi-text-wrap me-1"></i>Wrap';
+    });
+}
+</script>
+}

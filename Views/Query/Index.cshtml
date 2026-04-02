@@ -1,0 +1,226 @@
+@model OracleSqlPortal.Models.QueryViewModel
+@{
+    ViewData["Title"] = "SQL Editor";
+    var envConfigs   = ViewBag.EnvConfigs  as Dictionary<string, OracleSqlPortal.Models.EnvConfig>
+                       ?? new Dictionary<string, OracleSqlPortal.Models.EnvConfig>();
+    var userPerms    = ViewBag.UserPerms   as Dictionary<string, List<string>>
+                       ?? new Dictionary<string, List<string>>();
+    bool isAdmin     = ViewBag.IsAdminUser == true;
+    string accessMsg = ViewBag.AccessSuccess as string ?? "";
+    string selectedEnv = Model.SelectedEnv ?? envConfigs.Keys.FirstOrDefault() ?? "";
+
+    string EnvColor(string k) => k.ToUpper() switch {
+        "SIT" => "#38bdf8","UAT" => "#c084fc","PROD" => "#f97316",_ => "#22c55e" };
+}
+
+<div class="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+        <p class="page-title"><i class="bi bi-terminal-fill me-2" style="color:var(--brand)"></i>SQL Editor</p>
+        <p class="page-subtitle">Execute Oracle SQL against configured environments — permissions enforced per user</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(accessMsg))
+{ <div class="alert-success-custom mb-3"><i class="bi bi-check-circle-fill"></i> @accessMsg</div> }
+
+<form method="post" asp-action="Run">
+    @Html.AntiForgeryToken()
+
+    <!-- ── Environment selector + permission chips ── -->
+    <div class="card mb-3">
+        <div class="card-body" style="padding:0.75rem 1rem">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <div style="min-width:180px">
+                    <label class="form-label">Environment</label>
+                    <select name="SelectedEnv" id="envSelect" class="form-select" onchange="updatePermChips(this.value)">
+                        @foreach (var e in envConfigs.Keys)
+                        {
+                            <option value="@e" selected="@(e == selectedEnv)">
+                                @(envConfigs[e].Label ?? e)
+                            </option>
+
+                        }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Your Permissions</label>
+                    <div id="permChips" class="d-flex flex-wrap gap-1">
+                        @{
+                            var currentPerms = userPerms.TryGetValue(selectedEnv, out var cp) ? cp : new List<string>();
+                        }
+                        @foreach (var op in OracleSqlPortal.Models.SqlOps.All)
+                        {
+                            bool has = currentPerms.Contains(op, StringComparer.OrdinalIgnoreCase);
+                            @if (has || isAdmin)
+                            {
+                                <span class="op-chip @(has||isAdmin?"allowed":"denied")" style="font-size:0.65rem">@op</span>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── SQL Editor ── -->
+    <div class="card mb-3">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-code-slash me-2" style="color:var(--brand)"></i>SQL Statement</span>
+            <div class="d-flex gap-2 align-items-center">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearEditor()" title="Clear">
+                    <i class="bi bi-eraser me-1"></i>Clear
+                </button>
+                <button type="submit" class="btn btn-run" id="runBtn">
+                    <i class="bi bi-play-fill me-1"></i>Run
+                </button>
+            </div>
+        </div>
+        <div style="position:relative">
+            <textarea name="Sql" id="sqlEditor" class="sql-textarea form-control"
+                      spellcheck="false" autocorrect="off" autocapitalize="off"
+                      placeholder="SELECT * FROM my_table WHERE rownum <= 100"
+                      style="width:100%;min-height:280px;height:auto;border-radius:0 !important;border:none !important;border-bottom:1px solid var(--border) !important;resize:vertical;padding:1rem 1.25rem;font-family:'JetBrains Mono',Consolas,monospace;font-size:0.84rem;line-height:1.7;background:var(--code-bg) !important;color:var(--code-text) !important;box-shadow:none !important;tab-size:4">@Model.Sql</textarea>
+        </div>
+        <div style="background:var(--surface3);border-top:1px solid var(--border);padding:0.4rem 1rem;font-size:0.7rem;color:var(--muted);display:flex;align-items:center;gap:1rem">
+            <span id="lineCount">Lines: 1</span>
+            <span id="charCount">Characters: 0</span>
+            <span style="margin-left:auto;opacity:0.6"><kbd style="background:var(--surface4);padding:1px 5px;border-radius:3px;font-size:0.65rem">Ctrl+Enter</kbd> to run</span>
+        </div>
+    </div>
+
+    <!-- ── Result / Message ── -->
+    @if (!string.IsNullOrEmpty(Model.Message))
+    {
+        <div class="@(Model.IsError ? "alert-danger-custom" : "alert-success-custom") mb-3">
+            <i class="bi @(Model.IsError ? "bi-exclamation-triangle-fill" : "bi-check-circle-fill")"></i>
+            @Model.Message
+            @if (!Model.IsError && Model.ElapsedMs > 0)
+            {
+                <span style="margin-left:auto;font-size:0.72rem;color:var(--muted)">@Model.ElapsedMs ms</span>
+            }
+        </div>
+    }
+
+    @if (Model.Result != null && Model.Result.Rows.Count > 0)
+    {
+        <div class="card">
+            <div class="card-header d-flex align-items-center justify-content-between">
+                <span><i class="bi bi-table me-2" style="color:var(--brand)"></i>Results</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn btn-outline-success btn-sm me-2" onclick="exportToExcel()" title="Export to Excel">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Export
+                    </button>
+
+                    <span class="stat-pill"><i class="bi bi-list-ol"></i>@Model.RowCount rows</span>
+                    <span class="stat-pill"><i class="bi bi-stopwatch"></i>@Model.ElapsedMs ms</span>
+                    <input type="text" id="resultSearch" class="form-control form-control-sm"
+                           style="width:200px" placeholder="Filter results…" oninput="filterResults(this.value)" />
+                </div>
+            </div>
+            <div class="result-table-wrap" style="max-height:520px;overflow:auto">
+                <table class="result-table" id="resultTable">
+                    <thead>
+                        <tr>
+                            @foreach (System.Data.DataColumn col in Model.Result.Columns)
+                            { <th>@col.ColumnName</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (System.Data.DataRow row in Model.Result.Rows)
+                        {
+                            <tr>
+                                @foreach (var cell in row.ItemArray)
+                                { <td title="@cell">@(cell?.ToString() ?? "")</td> }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</form>
+
+@section Scripts {
+<script>
+// ── Ctrl+Enter to run ────────────────────────────────────────────
+document.getElementById('sqlEditor').addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); document.getElementById('runBtn').click(); }
+    // Tab inserts 4 spaces
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        var start = this.selectionStart, end = this.selectionEnd;
+        this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 4;
+        updateCounts();
+    }
+});
+
+// ── Live line/char counts ────────────────────────────────────────
+var editor = document.getElementById('sqlEditor');
+function updateCounts() {
+    var v = editor.value;
+    document.getElementById('lineCount').textContent   = 'Lines: '      + (v.split('\n').length);
+    document.getElementById('charCount').textContent   = 'Characters: ' + v.length;
+}
+editor.addEventListener('input', updateCounts);
+updateCounts();
+
+// ── Clear ────────────────────────────────────────────────────────
+function clearEditor() {
+    document.getElementById('sqlEditor').value = '';
+    updateCounts();
+}
+
+// ── Permission chips per env ─────────────────────────────────────
+var allPerms = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(userPerms));
+var allOps   = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(OracleSqlPortal.Models.SqlOps.All));
+var isAdmin  = @(isAdmin ? "true" : "false");
+
+function updatePermChips(env) {
+    var chips = document.getElementById('permChips');
+    chips.innerHTML = '';
+    var perms = allPerms[env] || [];
+    allOps.forEach(function(op) {
+        var has = isAdmin || perms.indexOf(op) >= 0;
+        if (has) {
+            var span = document.createElement('span');
+            span.className = 'op-chip allowed';
+            span.style.fontSize = '0.65rem';
+            span.textContent = op;
+            chips.appendChild(span);
+        }
+    });
+}
+
+// ── Filter results table ─────────────────────────────────────────
+function filterResults(q) {
+    q = q.toLowerCase();
+    document.querySelectorAll('#resultTable tbody tr').forEach(function(tr) {
+        tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+    });
+}
+
+// ── Run button spinner ───────────────────────────────────────────
+document.querySelector('form').addEventListener('submit', function() {
+    var btn = document.getElementById('runBtn');
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running…';
+    btn.disabled = true;
+});
+        function exportToExcel() {
+            var sql = document.getElementById('sqlEditor').value;
+            var env = document.getElementById('envSelect').value;
+
+            if (!sql.trim()) {
+                alert("Please enter a query to export.");
+                return;
+            }
+
+            // var exportUrl = 'Export/Excel?sql=' + encodeURIComponent(sql) + '&env=' + encodeURIComponent(env);
+                    var exportUrl = '@Url.Action("Excel", "Export")'
+            + '?sql=' + encodeURIComponent(sql)
+            + '&env=' + encodeURIComponent(env);
+            // Open in a new window/tab to trigger the file download
+            window.open(exportUrl, '_blank');
+        }
+</script>
+}

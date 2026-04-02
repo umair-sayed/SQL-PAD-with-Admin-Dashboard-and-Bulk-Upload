@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Oracle SQL Portal</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <script>
+        (function(){
+            var t = localStorage.getItem('portal-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
+</head>
+<body>
+    <nav class="app-navbar">
+        <div class="navbar-inner">
+            <a class="nav-brand" asp-controller="Query" asp-action="Index">
+                <span class="brand-icon-sm"><i class="bi bi-database-fill"></i></span>
+                <span class="brand-text">Oracle<span style="color:var(--brand)">SQL</span>Portal</span>
+            </a>
+            <ul class="nav-links">
+                @{
+                    string ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+                    string action = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+                    string? username = Context.Session.GetString("username");
+                    bool isAdmin = Context.Session.GetString("isadmin") == "1";
+                    bool hasViewSp = Context.Session.GetString("hasviewsp") == "1";
+                    bool isMigUser = Context.Session.GetString("ismigration") == "1";
+                }
+                <li><a asp-controller="Query" asp-action="Index" class="nav-link-item @(ctrl=="Query"?"active":"")"><i class="bi bi-terminal-fill"></i><span>SQL Editor</span></a></li>
+                @if (hasViewSp)
+                {
+                    <li><a asp-controller="ViewSp" asp-action="Index" class="nav-link-item @(ctrl=="ViewSp"?"active":"")"><i class="bi bi-eye-fill"></i><span>View Object</span></a></li>
+                }
+                @if (username != null)
+                {
+                    <li><a asp-controller="Migration" asp-action="Index" class="nav-link-item @(ctrl=="Migration"?"active":"")"><i class="bi bi-file-earmark-arrow-up-fill"></i><span>Migration</span></a></li>
+                }
+                @if (!isAdmin)
+                {
+                    <li><a asp-controller="Auth" asp-action="RequestAccess" class="nav-link-item @(ctrl=="Auth"&&action=="RequestAccess"?"active":"")"><i class="bi bi-hand-index-fill"></i><span>Request Access</span></a></li>
+                }
+                @if (isAdmin)
+                {
+                    <li><a asp-controller="Admin" asp-action="Index" class="nav-link-item @(ctrl=="Admin"?"active":"")"><i class="bi bi-shield-fill"></i><span>Admin</span></a></li>
+                }
+            </ul>
+            <div class="nav-right">
+                @{
+                    string? displayName = Context.Session.GetString("displayname");
+                }
+                <button class="btn-theme" id="themeToggle" title="Toggle theme" onclick="toggleTheme()"><i class="bi bi-moon-fill" id="themeIcon"></i></button>
+                @if (username != null)
+                {
+                    <div class="user-pill">
+                        <span class="user-avatar">@(string.Concat((displayName ?? username).Split(' ').Take(2).Select(w => w.Length > 0 ? w[0].ToString() : "")).ToUpper())</span>
+                        <span class="user-name">@(displayName ?? username)</span>
+                        @if (isAdmin)
+                        {
+                            <span style="background:var(--brand-glow);color:var(--brand);border-radius:4px;font-size:0.57rem;font-weight:700;padding:1px 6px;letter-spacing:0.5px">ADMIN</span>
+                        }
+                        else if (isMigUser)
+                        {
+                            <span style="background:rgba(192,132,252,0.15);color:#c084fc;border-radius:4px;font-size:0.57rem;font-weight:700;padding:1px 6px;letter-spacing:0.5px">MIGRATE</span>
+                        }
+                    </div>
+                    <a asp-controller="Auth" asp-action="Logout" class="btn-logout"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a>
+                }
+            </div>
+        </div>
+    </nav>
+    <div class="page-wrapper">
+        <main class="page-main">@RenderBody()</main>
+        <footer class="page-footer">
+            <span>&copy; 2026 Oracle SQL Portal</span>
+            <span style="color:var(--border)">|</span>
+            <span>Secure Database Access Portal</span>
+        </footer>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleTheme(){var html=document.documentElement,current=html.getAttribute('data-theme')||'dark',next=current==='dark'?'light':'dark';html.setAttribute('data-theme',next);localStorage.setItem('portal-theme',next);var icon=document.getElementById('themeIcon');if(icon)icon.className=next==='dark'?'bi bi-moon-fill':'bi bi-sun-fill';}
+        (function(){var t=localStorage.getItem('portal-theme')||'dark';var icon=document.getElementById('themeIcon');if(icon)icon.className=t==='dark'?'bi bi-moon-fill':'bi bi-sun-fill';})();
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

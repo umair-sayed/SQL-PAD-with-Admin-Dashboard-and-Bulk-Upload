@@ -1,0 +1,13 @@
+@{ ViewData["Title"] = "Access Denied"; }
+<div class="d-flex align-items-center justify-content-center" style="min-height:55vh">
+    <div class="text-center" style="max-width:420px">
+        <div style="font-size:3.5rem;margin-bottom:1rem"><i class="bi bi-shield-x" style="color:var(--danger)"></i></div>
+        <p class="page-title">Migration Access Denied</p>
+        <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1.5rem">
+            You do not have the <strong style="color:#c084fc">Migration</strong> role. Ask an admin to grant it, or request access below.
+        </p>
+        <a asp-controller="Auth" asp-action="RequestAccess" class="btn btn-run">
+            <i class="bi bi-hand-index-fill me-1"></i>Request Access
+        </a>
+    </div>
+</div>

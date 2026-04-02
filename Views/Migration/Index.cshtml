@@ -1,0 +1,335 @@
+@{
+    ViewData["Title"] = "SQL Migration";
+    var environments = ViewBag.Environments as List<string> ?? new List<string>();
+    string migFolder = (ViewBag.MigrationFolder as string) ?? "";
+}
+
+<div class="d-flex align-items-start justify-content-between mb-3 flex-wrap gap-2">
+    <div>
+        <p class="page-title"><i class="bi bi-file-earmark-arrow-up-fill me-2" style="color:#c084fc"></i>SQL Migration</p>
+        <p class="page-subtitle">Upload an Oracle SQL*Plus migration file — parsed, executed in a transaction, then committed or rolled back</p>
+    </div>
+    <button id="newMigrationBtn" class="btn btn-outline-primary btn-sm" style="display:none">
+        <i class="bi bi-plus-circle me-1"></i>New Migration
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(migFolder))
+{
+    <div class="mb-3 p-3 rounded d-flex align-items-center gap-2" style="background:rgba(56,189,248,0.07);border:1px solid rgba(56,189,248,0.22);font-size:0.8rem">
+        <i class="bi bi-folder2-open" style="color:#38bdf8"></i>
+        <span>Uploaded files are saved to: <code>@migFolder</code></span>
+    </div>
+}
+
+<div class="card mb-4" id="uploadPanel">
+    <div class="card-header"><i class="bi bi-cloud-upload me-2" style="color:#c084fc"></i>Upload &amp; Execute Migration Script</div>
+    <div class="card-body p-4">
+        <div class="row g-3 align-items-end mb-3">
+            <div class="col-md-3">
+                <label class="form-label">Target Environment</label>
+                <select id="migEnv" class="form-select">
+                    @foreach (var e in environments)
+                    {
+                        <option value="@e">@e</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">SQL File <span style="color:#c084fc">*</span></label>
+                <div id="dropZone" class="mig-drop-zone">
+                    <input type="file" id="sqlFile" accept=".sql,.txt" style="display:none" />
+                    <i class="bi bi-file-earmark-code" style="font-size:1.6rem;color:var(--muted)"></i>
+                    <div id="dropLabel" style="font-size:0.83rem;color:var(--muted);margin-top:0.4rem">
+                        Drag &amp; drop <code>.sql</code> here or <a href="#" id="browseLink" style="color:#c084fc">browse</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-run w-100" id="executeBtn" disabled style="background:linear-gradient(135deg,#c084fc,#9333ea)">
+                    <i class="bi bi-play-fill me-1"></i>Parse &amp; Execute
+                </button>
+            </div>
+        </div>
+        <div style="font-size:0.74rem;color:var(--muted);background:var(--surface3);border-radius:8px;padding:0.6rem 1rem;line-height:1.9">
+            <strong style="color:var(--text)">Auto-stripped:</strong>
+            <code>/* */</code> block comments &middot;
+            <code>--</code> line comments &middot;
+            <code>/</code> terminators &middot;
+            <code>SET</code> / <code>PROMPT</code> / <code>DEFINE</code> / <code>WHENEVER</code> / <code>@@include</code> &middot;
+            <code>REM</code> lines &nbsp;&nbsp;
+            <strong style="color:var(--text)">Split on:</strong> <code>;</code>
+        </div>
+    </div>
+</div>
+
+<div id="progressBar" style="display:none" class="mb-3">
+    <div style="height:4px;background:var(--surface4);border-radius:2px;overflow:hidden">
+        <div id="progressFill" style="height:100%;background:linear-gradient(90deg,#c084fc,#9333ea);width:0%;transition:width 0.4s"></div>
+    </div>
+    <div id="progressLabel" style="font-size:0.72rem;color:var(--muted);margin-top:0.35rem">Executing…</div>
+</div>
+
+<div id="resultsPanel" style="display:none">
+    <div id="summaryBar" class="mb-3 p-3 rounded d-flex align-items-center justify-content-between flex-wrap gap-3"
+         style="background:var(--surface2);border:1px solid var(--border)">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <span class="stat-pill" id="sumTotal"><i class="bi bi-list-ol"></i>—</span>
+            <span id="sumOk" class="op-chip allowed"><i class="bi bi-check2"></i>—</span>
+            <span id="sumErr" class="op-chip denied"><i class="bi bi-x"></i>—</span>
+            <span class="stat-pill" id="sumFile"><i class="bi bi-file-earmark-code"></i>—</span>
+            <span class="stat-pill" id="sumEnv"><i class="bi bi-hdd-network"></i>—</span>
+        </div>
+        <div id="outcomeLabel"></div>
+    </div>
+
+    <div id="actionButtons" class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+        <button class="btn btn-run" id="commitBtn" style="min-width:145px;background:var(--success)">
+            <i class="bi bi-check2-circle me-1"></i>Commit
+        </button>
+        <button class="btn btn-outline-danger" id="rollbackBtn" style="min-width:145px">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Rollback
+        </button>
+        <span id="txnOpenMsg" style="font-size:0.74rem;color:var(--muted)">
+            <i class="bi bi-exclamation-triangle me-1" style="color:#fbbf24"></i>
+            Transaction is open — commit or rollback to finalise
+        </span>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <span><i class="bi bi-list-check me-2" style="color:#c084fc"></i>Statement Results</span>
+            <div class="d-flex gap-2">
+                <input type="text" id="stmtSearch" class="form-control form-control-sm" style="width:200px" placeholder="Filter statements…" />
+                <select id="stmtFilter" class="form-select form-select-sm" style="width:115px">
+                    <option value="">All</option>
+                    <option value="ok">✓ Success</option>
+                    <option value="err">✗ Error</option>
+                </select>
+            </div>
+        </div>
+        <div style="max-height:580px;overflow-y:auto">
+            <table class="result-table" id="stmtTable">
+                <thead>
+                    <tr>
+                        <th style="width:42px">#</th>
+                        <th style="width:62px">~Line</th>
+                        <th>Statement Preview</th>
+                        <th style="width:80px;text-align:right">Rows</th>
+                        <th style="width:68px;text-align:right">ms</th>
+                        <th style="width:80px">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="stmtBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="stmtModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center;padding:2rem">
+    <div class="card" style="max-width:820px;width:100%;max-height:85vh;display:flex;flex-direction:column">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-code-slash me-2" style="color:#c084fc"></i>Full Statement</span>
+            <button id="closeModal" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div style="overflow-y:auto;background:var(--code-bg);flex:1">
+            <pre id="stmtModalContent" style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;color:var(--code-text);margin:0;padding:1.25rem;white-space:pre-wrap;word-break:break-word"></pre>
+        </div>
+        <div id="stmtModalError" style="padding:0.75rem 1.25rem;font-size:0.8rem;color:var(--danger);background:rgba(239,68,68,0.08);border-top:1px solid rgba(239,68,68,0.2);display:none"></div>
+    </div>
+</div>
+
+@Html.AntiForgeryToken()
+
+@section Scripts {
+    <script>
+        (function(){
+            var _sessionId=null, _finalized=false, _results=[];
+            var antiForgery = document.querySelector('input[name="__RequestVerificationToken"]').value;
+
+            // SAFETY: Warn user if they try to leave with an open transaction
+            window.addEventListener('beforeunload', function (e) {
+                if (_sessionId && !_finalized) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            });
+
+            /* drop zone */
+            var dz=document.getElementById('dropZone');
+            var fi=document.getElementById('sqlFile');
+            document.getElementById('browseLink').addEventListener('click',function(e){e.preventDefault();fi.click();});
+            fi.addEventListener('change',function(){if(fi.files[0])setFile(fi.files[0]);});
+            dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('dragover');});
+            dz.addEventListener('dragleave',function(){dz.classList.remove('dragover');});
+            dz.addEventListener('drop',function(e){e.preventDefault();dz.classList.remove('dragover');if(e.dataTransfer.files[0])setFile(e.dataTransfer.files[0]);});
+
+            function setFile(f){
+                dz._file=f;
+                document.getElementById('dropLabel').innerHTML='<i class="bi bi-file-earmark-check me-1" style="color:#c084fc"></i><strong style="color:var(--text)">'+escHtml(f.name)+'</strong> ('+Math.round(f.size/1024)+' KB)';
+                document.getElementById('executeBtn').disabled=false;
+            }
+
+            /* execute */
+            document.getElementById('executeBtn').addEventListener('click',async function(){
+                var f=dz._file;
+                if(!f){alert('Please select a SQL file.');return;}
+                var env=document.getElementById('migEnv').value;
+                _finalized=false; _sessionId=null;
+
+                document.getElementById('resultsPanel').style.display='none';
+                document.getElementById('newMigrationBtn').style.display='none';
+                document.getElementById('progressBar').style.display='block';
+                document.getElementById('progressFill').style.width='0%';
+                document.getElementById('progressLabel').textContent='Parsing and executing statements…';
+
+                var btn=this; btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Running…';
+
+                try{
+                    var fd=new FormData();
+                    fd.append('sqlFile',f);
+                    fd.append('env',env);
+                    fd.append('__RequestVerificationToken',antiForgery);
+
+                    var r=await fetch('@Url.Action("Execute", "Migration")',{method:'POST',body:fd});
+
+                    // If access was revoked while the page was open, redirect to Denied
+                    if(r.status===401||r.status===403||r.status===404){
+                        window.location.href='@Url.Action("Index", "Migration")';
+                        return;
+                    }
+                    var d=await r.json();
+
+                    // If server revoked access mid-session, go to Denied page
+                    if(!d.ok && d.error && d.error.toLowerCase().includes('access denied')){
+                        window.location.href='@Url.Action("Index", "Migration")';
+                        return;
+                    }
+
+                    document.getElementById('progressFill').style.width='100%';
+                    if(!d.ok){
+                        document.getElementById('progressLabel').innerHTML='<span style="color:var(--danger)"><i class="bi bi-x-circle me-1"></i>'+escHtml(d.error)+'</span>';
+                    } else {
+                        _sessionId=d.sessionId; _results=d.results;
+                        setTimeout(function(){
+                            document.getElementById('progressBar').style.display='none';
+                            renderResults(d.results,f.name,env);
+                        },300);
+                    }
+                }catch(e){
+                    document.getElementById('progressLabel').innerHTML='<span style="color:var(--danger)">'+escHtml(String(e))+'</span>';
+                }
+                btn.disabled=false;
+                btn.innerHTML='<i class="bi bi-play-fill me-1"></i>Parse &amp; Execute';
+            });
+
+            function renderResults(results,fileName,env){
+                var ok=results.filter(function(r){return r.success;}).length;
+                var err=results.filter(function(r){return !r.success;}).length;
+
+                document.getElementById('sumTotal').innerHTML='<i class="bi bi-list-ol"></i>'+results.length+' stmts';
+                document.getElementById('sumOk').innerHTML='<i class="bi bi-check2"></i>'+ok+' OK';
+                document.getElementById('sumErr').innerHTML='<i class="bi bi-x"></i>'+err+' Err';
+                document.getElementById('sumFile').innerHTML='<i class="bi bi-file-earmark-code"></i>'+escHtml(fileName);
+                document.getElementById('sumEnv').innerHTML='<i class="bi bi-hdd-network"></i>'+escHtml(env);
+
+                document.getElementById('outcomeLabel').textContent='';
+                document.getElementById('actionButtons').style.setProperty('display', 'flex', 'important');
+                document.getElementById('txnOpenMsg').style.display = 'inline';
+
+                var tbody=document.getElementById('stmtBody'); tbody.innerHTML='';
+                results.forEach(function(r,i){
+                    var tr=document.createElement('tr');
+                    tr.dataset.status=r.success?'ok':'err';
+                    tr.dataset.preview=(r.preview||'').toLowerCase();
+                    if(!r.success) tr.style.background='rgba(239,68,68,0.05)';
+                    tr.innerHTML=
+                        '<td style="color:var(--muted);font-family:\'JetBrains Mono\',monospace;font-size:0.72rem">'+(i+1)+'</td>'+
+                        '<td style="color:var(--muted);font-family:\'JetBrains Mono\',monospace;font-size:0.72rem">~'+r.lineNumber+'</td>'+
+                        '<td><span style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;cursor:pointer;color:var(--text)" class="stmt-clk" data-idx="'+i+'" title="Click for full statement">'+escHtml(r.preview)+'</span>'+
+                            (r.error?'<div style="font-size:0.67rem;color:var(--danger);margin-top:2px"><i class="bi bi-exclamation-circle me-1"></i>'+escHtml(r.error)+'</div>':'')+
+                        '</td>'+
+                        '<td style="text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:0.73rem;color:var(--muted)">'+(r.success&&r.rowsAffected>=0?r.rowsAffected:'-')+'</td>'+
+                        '<td style="text-align:right;font-family:\'JetBrains Mono\',monospace;font-size:0.73rem;color:var(--muted)">'+r.durationMs+'</td>'+
+                        '<td>'+(r.success?'<span class="op-chip allowed" style="font-size:0.62rem"><i class="bi bi-check2"></i>OK</span>':'<span class="op-chip denied" style="font-size:0.62rem"><i class="bi bi-x"></i>Err</span>')+'</td>';
+                    tbody.appendChild(tr);
+                });
+                document.getElementById('resultsPanel').style.display='block';
+
+                tbody.querySelectorAll('.stmt-clk').forEach(function(el){
+                    el.addEventListener('click',function(){showStmt(parseInt(this.dataset.idx));});
+                });
+
+                document.getElementById('stmtSearch').oninput=filterStmts;
+                document.getElementById('stmtFilter').onchange=filterStmts;
+            }
+
+            /* Finalize (Commit/Rollback) Logic */
+            async function finalize(action) {
+                if (_finalized || !_sessionId) return;
+                var isCommit = (action === 'commit');
+                if (!confirm(isCommit ? 'Commit all changes to the database? This cannot be undone.' : 'Roll back? Nothing will be saved.')) return;
+
+                var cBtn = document.getElementById('commitBtn');
+                var rBtn = document.getElementById('rollbackBtn');
+                cBtn.disabled = rBtn.disabled = true;
+
+                var targetBtn = isCommit ? cBtn : rBtn;
+                var originalHtml = targetBtn.innerHTML;
+                targetBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processing...';
+
+                try {
+                    var r = await fetch('@Url.Action("Commit", "Migration")'.replace('Commit', isCommit ? 'Commit' : 'Rollback'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: 'sessionId=' + encodeURIComponent(_sessionId) + '&__RequestVerificationToken=' + encodeURIComponent(antiForgery)
+                    });
+                    var d = await r.json();
+                    if (d.ok) {
+                        _finalized = true;
+                        document.getElementById('actionButtons').style.setProperty('display', 'none', 'important');
+                        document.getElementById('txnOpenMsg').style.display = 'none';
+                        document.getElementById('newMigrationBtn').style.display = 'inline-block';
+                        document.getElementById('outcomeLabel').innerHTML = isCommit
+                            ? '<span class="op-chip allowed"><i class="bi bi-check2-circle me-1"></i>COMMITTED</span>'
+                            : '<span class="op-chip denied"><i class="bi bi-arrow-counterclockwise me-1"></i>ROLLED BACK</span>';
+                    } else {
+                        alert('Error: ' + d.error);
+                        cBtn.disabled = rBtn.disabled = false;
+                        targetBtn.innerHTML = originalHtml;
+                    }
+                } catch (e) {
+                    alert('Network error: ' + e);
+                    cBtn.disabled = rBtn.disabled = false;
+                    targetBtn.innerHTML = originalHtml;
+                }
+            }
+
+            document.getElementById('commitBtn').onclick = () => finalize('commit');
+            document.getElementById('rollbackBtn').onclick = () => finalize('rollback');
+            document.getElementById('newMigrationBtn').onclick = () => window.location.reload();
+
+            /* modal */
+            function showStmt(i){
+                var r=_results[i];
+                document.getElementById('stmtModalContent').textContent=r.statement||r.preview;
+                var ed=document.getElementById('stmtModalError');
+                if(r.error){ed.style.display='block';ed.innerHTML='<i class="bi bi-x-circle me-1"></i>'+escHtml(r.error);}
+                else{ed.style.display='none';}
+                document.getElementById('stmtModal').style.display='flex';
+            }
+            document.getElementById('stmtModal').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+            document.getElementById('closeModal').addEventListener('click',function(){document.getElementById('stmtModal').style.display='none';});
+
+            function filterStmts(){
+                var s=(document.getElementById('stmtSearch').value||'').toLowerCase();
+                var f=document.getElementById('stmtFilter').value||'';
+                document.querySelectorAll('#stmtBody tr').forEach(function(tr){
+                    tr.style.display=((!s||(tr.dataset.preview||'').includes(s))&&(!f||tr.dataset.status===f))?'':'none';
+                });
+            }
+
+            function escHtml(s){if(!s)return'';return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+        })();
+    </script>
+}
