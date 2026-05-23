@@ -185,24 +185,5 @@ namespace OracleSqlPortal.Controllers
                 map[env] = _perms.GetUserPermissions(CurrentUser!, env);
             return map;
         }
-
-        [HttpGet]
-        public IActionResult MyHistory()
-        {
-            if (CurrentUser == null)
-                return Json(new { error = "Not authenticated" });
-
-            var rows = _history.GetForUser(CurrentUser, 200);
-            var result = rows.Select(q => new
-            {
-                sql         = q.Sql,
-                environment = q.Environment,
-                executedAt  = q.ExecutedAt.ToString("dd-MMM-yyyy HH:mm:ss"),
-                rows        = q.Rows,
-                durationMs  = q.DurationMs,
-                isError     = q.IsError
-            });
-            return Json(result);
-        }
     }
 }

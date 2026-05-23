@@ -94,47 +94,26 @@ namespace OracleSqlPortal.Controllers
         }
 
         [HttpPost]
-        public IActionResult ExecuteSp([FromBody] ExecuteSpRequest request)
+        public IActionResult ExecuteSp(string spName, string env,
+            [FromBody] List<SpParamInput> parameters)
         {
             if (CurrentUser == null) return Json(new { ok = false, error = "Not logged in" });
             if (!_perms.UserHasViewSpPermission(CurrentUser))
                 return Json(new { ok = false, error = "Access denied" });
-            if (string.IsNullOrWhiteSpace(request?.SpName))
-                return Json(new { ok = false, error = "SP name is required." });
-            if (string.IsNullOrWhiteSpace(request?.Env))
-                return Json(new { ok = false, error = "Environment is required." });
-
-            var pList = request.Parameters?
-                            .Select(p => (p.Name, p.Type, p.Direction, p.Value))
-                            .ToList()
+            var pList = parameters?.Select(p => (p.Name, p.Type, p.Direction, p.Value)).ToList()
                         ?? new List<(string, string, string, string)>();
-
-            var result = _db.ExecuteSpWithParams(request.SpName, request.Env, pList);
-            if (!string.IsNullOrEmpty(result.Error))
-                return Json(new { ok = false, error = result.Error });
-
-            return Json(new
-            {
-                ok           = true,
-                output       = result.ScalarOutput,   // OUT param key=value lines
-                dbmsOutput   = result.DbmsOutput,     // DBMS_OUTPUT.PUT_LINE text
-                cursors      = result.Cursors         // list of { name, columns[], rows[][] }
-            });
+            var (output, error) = _db.ExecuteSpWithParams(spName, env, pList);
+            if (!string.IsNullOrEmpty(error))
+                return Json(new { ok = false, error });
+            return Json(new { ok = true, output });
         }
-    }
-
-    public class ExecuteSpRequest
-    {
-        public string SpName { get; set; } = "";
-        public string Env    { get; set; } = "";
-        public List<SpParamInput> Parameters { get; set; } = new();
     }
 
     public class SpParamInput
     {
-        public string Name      { get; set; } = "";
-        public string Type      { get; set; } = "VARCHAR2";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "VARCHAR2";
         public string Direction { get; set; } = "IN";
-        public string Value     { get; set; } = "";
+        public string Value { get; set; } = "";
     }
 }

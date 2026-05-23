@@ -19,7 +19,7 @@ namespace OracleSqlPortal.Models
     {
         public static readonly string[] All = new[]
         {
-            "SELECT", "INSERT", "UPDATE", "DELETE",
+            "SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE",
             "CREATE", "DROP", "ALTER", "EXECUTE", "VIEW_SP", "MIGRATION"
         };
     }
@@ -119,6 +119,8 @@ namespace OracleSqlPortal.Models
         public List<MigrationHistory> MigrationHistory { get; set; } = new();
         public List<AdminActivity> AdminActivity   { get; set; } = new();
        public List<ErrorLog> ErrorLog { get; set; } = new();
+        public List<UserFeedback>  Feedbacks       { get; set; } = new();
+        public List<PopupNotification> Popups      { get; set; } = new();
         public string  MigrationFolder  { get; set; } = "";
         public string  PortalDbConnStr  { get; set; } = "";
         public string  PortalDbDesc     { get; set; } = "";

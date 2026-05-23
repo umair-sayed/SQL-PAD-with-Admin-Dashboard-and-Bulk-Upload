@@ -1,0 +1,19 @@
+@{
+    ViewData["Title"] = "Notifications";
+    var popups = ViewBag.AcknowledgedPopups as List<OracleSqlPortal.Models.PopupNotification> ?? new();
+}
+<p class="page-title"><i class="bi bi-bell-fill me-2" style="color:var(--brand)"></i>Notifications</p>
+<p class="page-subtitle">Previously read announcements and notifications</p>
+
+@if (!popups.Any())
+{ <p class="text-muted">No saved notifications yet.</p> }
+@foreach (var p in popups)
+{
+    <div class="card mb-3">
+        <div class="card-header d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-megaphone-fill me-2" style="color:var(--brand)"></i>@p.Title</span>
+            <span style="font-size:0.72rem;color:var(--muted)">@p.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</span>
+        </div>
+        <div class="card-body" style="white-space:pre-wrap;font-size:0.88rem">@p.Body</div>
+    </div>
+}

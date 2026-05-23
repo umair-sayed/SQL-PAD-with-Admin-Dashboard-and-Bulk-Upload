@@ -55,6 +55,8 @@
     ("migrationhistory", "bi-file-earmark-arrow-up","Migration Log",     Model.MigrationHistory.Count),
     ("activityhistory",  "bi-activity",             "Activity History",  Model.AdminActivity.Count),
     ("logs", "bi-journal-text", "Logs", Model.ErrorLog.Count),
+    ("feedback",         "bi-chat-dots-fill",       "Feedback",          Model.Feedbacks.Count(f=>f.Status=="Open")),
+    ("popups",           "bi-megaphone-fill",       "Popup Mgmt",        Model.Popups.Count(p=>p.IsActive)),
         };
     }
     @foreach (var (id, icon, label, badge) in tabs)
@@ -899,4 +901,111 @@
             });
         }
     </script>
+}
+
+@* ── FEEDBACK TAB ──────────────────────────────────────────── *@
+@if (tab == "feedback")
+{
+    <div class="card mb-3">
+        <div class="card-header"><i class="bi bi-chat-dots-fill me-2" style="color:var(--brand)"></i>User Feedback</div>
+        @if (!Model.Feedbacks.Any())
+        {
+            <div class="card-body text-center text-muted">No feedback submitted yet.</div>
+        }
+        @foreach (var fb in Model.Feedbacks)
+        {
+            <div style="padding:1rem;border-bottom:1px solid var(--border)">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div>
+                        <strong style="font-size:0.88rem">@fb.Subject</strong>
+                        <span class="op-chip @(fb.Status=="Closed"?"allowed":"")" style="margin-left:6px">@fb.Status</span>
+                        <div style="font-size:0.75rem;color:var(--muted)">@fb.DisplayName (@fb.Username) · @fb.CreatedAt.ToString("dd-MMM-yyyy HH:mm")</div>
+                        <p style="font-size:0.82rem;margin-top:4px;white-space:pre-wrap">@fb.Message</p>
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(fb.AdminReply))
+                {
+                    <div class="p-2 rounded mb-2" style="background:var(--surface3);font-size:0.8rem"><strong>Admin reply:</strong> @fb.AdminReply</div>
+                }
+                <form method="post" asp-action="ReplyFeedback" class="d-flex gap-2 align-items-end mt-2">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="id" value="@fb.Id" />
+                    <textarea name="reply" class="form-control form-control-sm" rows="2" placeholder="Reply…" style="min-width:300px">@fb.AdminReply</textarea>
+                    <select name="status" class="form-select form-select-sm" style="width:120px">
+                        <option value="Open" selected="@(fb.Status=="Open")">Open</option>
+                        <option value="In Progress" selected="@(fb.Status=="In Progress")">In Progress</option>
+                        <option value="Closed" selected="@(fb.Status=="Closed")">Closed</option>
+                    </select>
+                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="bi bi-send me-1"></i>Reply</button>
+                </form>
+            </div>
+        }
+    </div>
+}
+
+@* ── POPUP MANAGEMENT TAB ─────────────────────────────────── *@
+@if (tab == "popups")
+{
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-megaphone-fill me-2" style="color:var(--brand)"></i>Create Popup Notification</div>
+        <div class="card-body">
+            <form method="post" asp-action="AddPopup">
+                @Html.AntiForgeryToken()
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Title</label>
+                        <input type="text" name="title" class="form-control" required maxlength="300" placeholder="e.g. Scheduled Maintenance" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Expires At (optional)</label>
+                        <input type="datetime-local" name="expiresAt" class="form-control" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Message Body</label>
+                        <textarea name="body" class="form-control" rows="4" required placeholder="Notification message visible to all users…"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-run"><i class="bi bi-megaphone me-1"></i>Post Notification</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><i class="bi bi-list-ul me-2" style="color:var(--brand)"></i>All Notifications (@Model.Popups.Count)</div>
+        @if (!Model.Popups.Any())
+        {
+            <div class="card-body text-center text-muted">No notifications posted yet.</div>
+        }
+        @foreach (var p in Model.Popups)
+        {
+            <div style="padding:1rem;border-bottom:1px solid var(--border)">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                    <div style="flex:1">
+                        <strong>@p.Title</strong>
+                        @if (p.IsActive)
+                        { <span class="op-chip allowed ms-2">Active</span> }
+                        else
+                        { <span class="op-chip ms-2" style="opacity:0.5">Inactive</span> }
+                        <div style="font-size:0.75rem;color:var(--muted)">
+                            Posted by @p.CreatedBy · @p.CreatedAt.ToString("dd-MMM-yyyy HH:mm")
+                            @if (p.ExpiresAt.HasValue) { <span> · Expires @p.ExpiresAt.Value.ToString("dd-MMM-yyyy HH:mm")</span> }
+                        </div>
+                        <p style="font-size:0.82rem;margin-top:4px;white-space:pre-wrap">@p.Body</p>
+                    </div>
+                    <div class="d-flex flex-column gap-1">
+                        <form method="post" asp-action="SetPopupActive">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="id" value="@p.Id" />
+                            <input type="hidden" name="active" value="@(!p.IsActive ? "true" : "false")" />
+                            <button type="submit" class="btn btn-sm @(p.IsActive?"btn-outline-warning":"btn-outline-success")">
+                                <i class="bi @(p.IsActive?"bi-pause-fill":"bi-play-fill") me-1"></i>@(p.IsActive?"Deactivate":"Activate")
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
 }

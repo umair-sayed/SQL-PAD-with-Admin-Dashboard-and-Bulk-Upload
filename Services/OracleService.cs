@@ -72,21 +72,28 @@ namespace OracleSqlPortal.Services
                 return cs;
         }
 
-        // ── Execute SELECT ────────────────────────────────────────
-        public (DataTable, long) ExecuteQuery(string sql, string env)
+        // ── Execute SELECT (streaming, non-blocking) ──────────────
+        public (DataTable, long) ExecuteQueryAsync(string sql, string env)
         {
             var dt = new DataTable();
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            //if (!sql.ToLower().Contains("fetch") && !sql.ToLower().Contains("rownum"))
-            //    sql += " FETCH FIRST 1000 ROWS ONLY";
             using var conn = new OracleConnection(BuildConnStr(env));
             conn.Open();
             using var cmd = new OracleCommand(sql, conn) { CommandTimeout = 120 };
-            cmd.InitialLOBFetchSize = -1; cmd.FetchSize = 1024 * 1024 * 5;
-            using var reader = cmd.ExecuteReader();
-            dt.Load(reader); sw.Stop();
+            // Optimised fetch settings to avoid UI freeze on large result sets
+            cmd.InitialLOBFetchSize = -1;
+            cmd.FetchSize = cmd.Connection.MaxStatementCacheSize == 0
+                ? 1024 * 1024 * 10   // 10 MB fetch buffer
+                : 1024 * 1024 * 5;
+            using var reader = cmd.ExecuteReader(System.Data.CommandBehavior.Default);
+            dt.Load(reader);
+            sw.Stop();
             return (dt, sw.ElapsedMilliseconds);
         }
+
+        // ── Execute SELECT (original, kept for compatibility) ─────
+        public (DataTable, long) ExecuteQuery(string sql, string env)
+            => ExecuteQueryAsync(sql, env);
 
         // ── Execute DML ───────────────────────────────────────────
         public (int, long) ExecuteNonQuery(string sql, string env)
@@ -100,17 +107,35 @@ namespace OracleSqlPortal.Services
         }
 
         // ── Object definition ─────────────────────────────────────
-        public ObjectDefinitionResult GetObjectDefinition(string objectName, string env)
+        public ObjectDefinitionResult GetObjectDefinition(string objectName, string env, string? preferredType = null)
         {
             using var conn = new OracleConnection(BuildConnStr(env));
             conn.Open();
             string? objectType;
-            using (var cmd = new OracleCommand(
-                "SELECT OBJECT_TYPE FROM USER_OBJECTS WHERE OBJECT_NAME=:name FETCH FIRST 1 ROW ONLY", conn))
+            if (!string.IsNullOrWhiteSpace(preferredType) && preferredType != "ALL")
             {
+                // Map short codes to Oracle types
+                string oraType = preferredType.ToUpper() switch {
+                    "SP" or "PROCEDURE" => "PROCEDURE",
+                    "FUNCTION"          => "FUNCTION",
+                    "VIEW"              => "VIEW",
+                    "TABLE"             => "TABLE",
+                    _                   => preferredType.ToUpper()
+                };
+                using var cmd = new OracleCommand(
+                    "SELECT OBJECT_TYPE FROM USER_OBJECTS WHERE OBJECT_NAME=:name AND OBJECT_TYPE=:t FETCH FIRST 1 ROW ONLY", conn);
+                cmd.Parameters.Add("name", OracleDbType.Varchar2).Value = objectName.ToUpper();
+                cmd.Parameters.Add("t", OracleDbType.Varchar2).Value = oraType;
+                objectType = cmd.ExecuteScalar()?.ToString();
+            }
+            else
+            {
+                using var cmd = new OracleCommand(
+                    "SELECT OBJECT_TYPE FROM USER_OBJECTS WHERE OBJECT_NAME=:name FETCH FIRST 1 ROW ONLY", conn);
                 cmd.Parameters.Add("name", OracleDbType.Varchar2).Value = objectName.ToUpper();
                 objectType = cmd.ExecuteScalar()?.ToString();
             }
+
             if (objectType == null) return new ObjectDefinitionResult { Found = false };
 
             string sqlText;

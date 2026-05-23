@@ -7,8 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Controllers\QueryController_BKP.cs" />
+    <Compile Remove="Controllers\ViewSpController_bkp.cs" />
     <Compile Remove="Models\ErrorLog.cs" />
     <Compile Remove="Services\AppSettingsDataService.cs" />
+    <Compile Remove="Services\PortalDbService_BKP.cs" />
+    <Compile Remove="Services\PortalDbService_bkp1.cs" />
+    <Compile Remove="Services\QueryHistoryService_BKP.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="Views\Query\Index_BKP.cshtml" />
   </ItemGroup>
 
   <ItemGroup>

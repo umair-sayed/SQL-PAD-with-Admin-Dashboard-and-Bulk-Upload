@@ -227,80 +227,18 @@ function executeSp() {
         method: 'POST',
         headers: {'Content-Type':'application/json',
                   'RequestVerificationToken': document.querySelector('[name=__RequestVerificationToken]')?.value || ''},
-        body: JSON.stringify({ spName: spName, env: env, parameters: params })
+        body: JSON.stringify({spName, env, parameters: params})
     })
     .then(r=>r.json())
     .then(function(data){
         var out = document.getElementById('spOutput');
-        if (!data.ok) {
-            out.innerHTML = '<div class="alert-danger-custom"><i class="bi bi-exclamation-triangle-fill me-1"></i>' + escHtmlSp(data.error) + '</div>';
-            return;
+        if (data.ok) {
+            out.innerHTML = '<div class="alert-success-custom"><i class="bi bi-check-circle-fill me-1"></i><pre style="margin:0;white-space:pre-wrap">'
+                + (data.output || '(No output parameters)') + '</pre></div>';
+        } else {
+            out.innerHTML = '<div class="alert-danger-custom"><i class="bi bi-exclamation-triangle-fill me-1"></i>' + data.error + '</div>';
         }
-
-        var html = '';
-
-        // ── Scalar OUT params ──────────────────────────────────────
-        if (data.output && data.output.trim()) {
-            html += '<div class="alert-success-custom mb-2"><i class="bi bi-check-circle-fill me-1"></i>'
-                 + '<strong>Output Parameters</strong>'
-                 + '<pre style="margin:0.5rem 0 0;white-space:pre-wrap">' + escHtmlSp(data.output.trim()) + '</pre></div>';
-        }
-
-        // ── DBMS_OUTPUT lines ──────────────────────────────────────
-        if (data.dbmsOutput && data.dbmsOutput.trim()) {
-            html += '<div class="card mb-2" style="background:var(--surface3);border:1px solid var(--border)">'
-                 + '<div class="card-header" style="background:var(--surface3);border-bottom:1px solid var(--border);padding:0.4rem 0.75rem;font-size:0.8rem;color:var(--muted)">'
-                 + '<i class="bi bi-terminal me-1" style="color:var(--brand)"></i>DBMS_OUTPUT</div>'
-                 + '<div class="card-body p-0"><pre style="margin:0;padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--fg);white-space:pre-wrap">'
-                 + escHtmlSp(data.dbmsOutput.trim()) + '</pre></div></div>';
-        }
-
-        // ── Cursor result sets ─────────────────────────────────────
-        if (data.cursors && data.cursors.length > 0) {
-            data.cursors.forEach(function(cur) {
-                html += '<div class="card mb-2" style="background:var(--surface3);border:1px solid var(--border)">'
-                     + '<div class="card-header" style="background:var(--surface3);border-bottom:1px solid var(--border);padding:0.4rem 0.75rem;font-size:0.8rem;color:var(--muted)">'
-                     + '<i class="bi bi-table me-1" style="color:var(--brand)"></i>'
-                     + escHtmlSp(cur.name) + ' <span style="color:var(--muted)">(' + cur.rows.length + ' row' + (cur.rows.length===1?'':'s') + ')</span></div>'
-                     + '<div class="card-body p-0" style="overflow-x:auto">';
-
-                if (cur.columns.length === 0) {
-                    html += '<div style="padding:0.5rem 0.75rem;font-size:0.78rem;color:var(--muted)">Cursor returned no data.</div>';
-                } else {
-                    html += '<table class="table table-sm mb-0" style="font-size:0.78rem;color:var(--fg);border-color:var(--border)">'
-                         + '<thead style="background:var(--surface2)"><tr>';
-                    cur.columns.forEach(function(c){
-                        html += '<th style="border-color:var(--border);color:var(--muted);font-weight:500;white-space:nowrap">' + escHtmlSp(c) + '</th>';
-                    });
-                    html += '</tr></thead><tbody>';
-                    cur.rows.forEach(function(row){
-                        html += '<tr>';
-                        row.forEach(function(cell){
-                            html += '<td style="border-color:var(--border);white-space:nowrap">' + escHtmlSp(cell) + '</td>';
-                        });
-                        html += '</tr>';
-                    });
-                    html += '</tbody></table>';
-                }
-                html += '</div></div>';
-            });
-        }
-
-        // ── Nothing at all ─────────────────────────────────────────
-        if (!html) {
-            html = '<div class="alert-success-custom"><i class="bi bi-check-circle-fill me-1"></i>Procedure executed successfully. No output returned.</div>';
-        }
-
-        out.innerHTML = html;
-    })
-    .catch(function(err){
-        document.getElementById('spOutput').innerHTML =
-            '<div class="alert-danger-custom"><i class="bi bi-exclamation-triangle-fill me-1"></i>Request failed: ' + err + '</div>';
     });
-}
-
-function escHtmlSp(s) {
-    var d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
 }
 </script>
 @Html.AntiForgeryToken()

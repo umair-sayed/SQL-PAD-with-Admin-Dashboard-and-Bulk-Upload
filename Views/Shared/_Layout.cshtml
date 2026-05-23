@@ -39,6 +39,13 @@
                 @if (username != null)
                 {
                     <li><a asp-controller="Migration" asp-action="Index" class="nav-link-item @(ctrl=="Migration"?"active":"")"><i class="bi bi-file-earmark-arrow-up-fill"></i><span>Migration</span></a></li>
+                    <li><a asp-controller="Feedback" asp-action="Index" class="nav-link-item @(ctrl=="Feedback"&&action=="Index"?"active":"")"><i class="bi bi-chat-dots-fill"></i><span>Feedback</span></a></li>
+                    <li>
+                        <a asp-controller="Feedback" asp-action="Notifications" class="nav-link-item @(ctrl=="Feedback"&&action=="Notifications"?"active":"")">
+                            <i class="bi bi-bell-fill"></i><span>Notifications</span>
+                            <span id="notifBadge" style="display:none;background:var(--brand);color:white;border-radius:50%;font-size:0.55rem;padding:1px 5px;margin-left:2px;font-weight:700"></span>
+                        </a>
+                    </li>
                 }
                 @if (!isAdmin)
                 {
@@ -52,6 +59,16 @@
             <div class="nav-right">
                 @{
                     string? displayName = Context.Session.GetString("displayname");
+                }
+                <!-- Hamburger apps menu -->
+                @if (username != null)
+                {
+                    <div class="dropdown" id="appsMenuWrap" style="display:none">
+                        <button class="btn-theme" data-bs-toggle="dropdown" title="External Apps" id="appsMenuBtn">
+                            <i class="bi bi-grid-3x3-gap-fill"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" id="appsDropdown" style="min-width:220px"></ul>
+                    </div>
                 }
                 <button class="btn-theme" id="themeToggle" title="Toggle theme" onclick="toggleTheme()"><i class="bi bi-moon-fill" id="themeIcon"></i></button>
                 @if (username != null)
@@ -78,14 +95,98 @@
         <footer class="page-footer">
             <span>&copy; 2026 Oracle SQL Portal</span>
             <span style="color:var(--border)">|</span>
-            <span>Secure Database Access Portal</span>
+            <span id="footerVersion">Loading…</span>
         </footer>
     </div>
+
+    <!-- ── Popup Notification Modal ── -->
+    <div class="modal fade" id="popupModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)">
+                <div class="modal-header" style="border-bottom:1px solid var(--border)">
+                    <h5 class="modal-title" id="popupModalTitle"></h5>
+                </div>
+                <div class="modal-body" id="popupModalBody" style="white-space:pre-wrap"></div>
+                <div class="modal-footer" style="border-top:1px solid var(--border)">
+                    <span id="popupCounter" class="me-auto" style="font-size:0.78rem;color:var(--muted)"></span>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="dismissPopup()">Mark as Read</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ── Theme toggle ───────────────────────────────────────────
         function toggleTheme(){var html=document.documentElement,current=html.getAttribute('data-theme')||'dark',next=current==='dark'?'light':'dark';html.setAttribute('data-theme',next);localStorage.setItem('portal-theme',next);var icon=document.getElementById('themeIcon');if(icon)icon.className=next==='dark'?'bi bi-moon-fill':'bi bi-sun-fill';}
         (function(){var t=localStorage.getItem('portal-theme')||'dark';var icon=document.getElementById('themeIcon');if(icon)icon.className=t==='dark'?'bi bi-moon-fill':'bi bi-sun-fill';})();
+
+        // ── Version in footer ──────────────────────────────────────
+        fetch('/api/version').then(r=>r.json()).then(function(v){
+            var el = document.getElementById('footerVersion');
+            if (!el) return;
+            if (v && v.versionNumber) {
+                el.textContent = 'v' + v.versionNumber + ' (' + v.versionDate + ')';
+                if (v.expired) el.style.color = '#f97316';
+            } else { el.textContent = ''; }
+        }).catch(function(){ document.getElementById('footerVersion').textContent = ''; });
+
+        // ── Hamburger: load external apps ─────────────────────────
+        (function(){
+            fetch('/api/external-apps').then(r=>r.json()).then(function(apps){
+                if (!apps || !apps.length) return;
+                var wrap = document.getElementById('appsMenuWrap');
+                var ul = document.getElementById('appsDropdown');
+                if (!wrap || !ul) return;
+                wrap.style.display = '';
+                apps.forEach(function(app){
+                    var li = document.createElement('li');
+                    li.innerHTML = '<a class="dropdown-item" href="'+app.url+'" target="_blank" rel="noopener">'
+                        +'<i class="bi bi-box-arrow-up-right me-2 text-muted"></i>'+app.name+'</a>';
+                    ul.appendChild(li);
+                });
+            }).catch(function(){});
+        })();
+
+        // ── Popups: show unseen on load ────────────────────────────
+        var pendingPopups = [];
+        var popupIdx = 0;
+        @if (username != null)
+        {
+            <text>
+        (function(){
+            fetch('/Feedback/GetUnseenPopups').then(r=>r.json()).then(function(popups){
+                if (!popups || !popups.length) return;
+                pendingPopups = popups;
+                popupIdx = 0;
+                showNextPopup();
+            }).catch(function(){});
+        })();
+            </text>
+        }
+
+        function showNextPopup() {
+            if (popupIdx >= pendingPopups.length) return;
+            var p = pendingPopups[popupIdx];
+            document.getElementById('popupModalTitle').textContent = p.title;
+            document.getElementById('popupModalBody').textContent = p.body;
+            document.getElementById('popupCounter').textContent = (popupIdx+1)+' of '+pendingPopups.length;
+            var m = new bootstrap.Modal(document.getElementById('popupModal'), {backdrop:'static', keyboard:false});
+            m.show();
+        }
+
+        function dismissPopup() {
+            var p = pendingPopups[popupIdx];
+            fetch('/Feedback/AcknowledgePopup', {
+                method: 'POST',
+                headers: {'Content-Type':'application/x-www-form-urlencoded'},
+                body: 'popupId='+p.id
+            });
+            bootstrap.Modal.getInstance(document.getElementById('popupModal'))?.hide();
+            popupIdx++;
+            setTimeout(showNextPopup, 400);
+        }
     </script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>

@@ -20,7 +20,82 @@ namespace OracleSqlPortal.Controllers
             IConfiguration config, IWebHostEnvironment env)
         { _oracle = oracle; _perms = perms; _db = db; _portal = portal; _config = config; _env = env; }
 
-        private string AdminUser => HttpContext.Session.GetString("username") ?? "admin";
+        private string AdminUser => HttpContext.Session.GetString("" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "" +
+            "username") ?? "admin";
 
         private bool IsAdmin()
         {
@@ -404,6 +479,8 @@ namespace OracleSqlPortal.Controllers
                 MigrationHistory = _db.GetMigrationHistory(300),
                 AdminActivity = _db.GetAdminActivity(500),
                 ErrorLog=_db.GetErrorLogs(500),
+                Feedbacks = _db.GetAllFeedback(),
+                Popups = _db.GetAllPopups(),
                 MigrationFolder = _config["MigrationFolder"] ?? "",
                 PortalDbConnStr = sec["ConnectionString"] ?? "",
                 PortalDbDesc = _db.GetDbDescription(),
@@ -460,6 +537,65 @@ namespace OracleSqlPortal.Controllers
             System.IO.File.WriteAllText(path,
                 json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             (_config as IConfigurationRoot)?.Reload();
+        }
+
+        // ── Feedback Management ────────────────────────────────────
+        [HttpPost]
+        public IActionResult ReplyFeedback(long id, string reply, string status = "Closed")
+        {
+            if (!IsAdmin()) return RedirectToAction("Login");
+            _db.ReplyFeedback(id, reply, status);
+            LogActivity("Reply Feedback", id.ToString(), $"Replied to feedback #{id}, status={status}");
+            TempData["Success"] = "Reply saved.";
+            return RedirectToAction("Index", new { tab = "feedback" });
+        }
+
+        // ── Popup Management ───────────────────────────────────────
+        [HttpPost]
+        public IActionResult AddPopup(string title, string body, string? expiresAt)
+        {
+            if (!IsAdmin()) return RedirectToAction("Login");
+            DateTime? exp = null;
+            if (!string.IsNullOrWhiteSpace(expiresAt) && DateTime.TryParse(expiresAt, out var dt))
+                exp = dt;
+            _db.AddPopupNotification(new PopupNotification
+            {
+                Title = title,
+                Body = body,
+                CreatedBy = AdminUser,
+                ExpiresAt = exp
+            });
+            LogActivity("Add Popup", title, $"Created popup notification: {title}");
+            TempData["Success"] = "Popup notification created.";
+            return RedirectToAction("Index", new { tab = "popups" });
+        }
+
+        [HttpPost]
+        public IActionResult SetPopupActive(long id, bool active)
+        {
+            if (!IsAdmin()) return RedirectToAction("Login");
+            _db.SetPopupActive(id, active);
+            LogActivity("Set Popup Active", id.ToString(), $"Set popup #{id} active={active}");
+            TempData["Success"] = $"Popup {(active ? "activated" : "deactivated")}.";
+            return RedirectToAction("Index", new { tab = "popups" });
+        }
+
+        // ── AJAX: Get SP Params ────────────────────────────────────
+        [HttpPost]
+        public IActionResult GetSpParams(string spName, string env)
+        {
+            if (!IsAdmin()) return Json(new { ok = false });
+            var parms = _db.GetSpParameters(spName, env);
+            return Json(new { ok = true, parameters = parms.Select(p => new { p.name, p.type, p.inOut }) });
+        }
+
+        // ── AJAX: Get objects like ─────────────────────────────────
+        [HttpPost]
+        public IActionResult GetObjectsLike(string pattern, string objectType, string env)
+        {
+            if (!IsAdmin()) return Json(new { ok = false });
+            var objs = _db.GetObjectsLike(pattern, objectType, env);
+            return Json(new { ok = true, objects = objs });
         }
     }
 }
